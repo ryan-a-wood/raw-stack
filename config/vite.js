@@ -4,6 +4,16 @@
 
 const TEST_FILES = ["**/*.test.ts", "**/*.test.tsx"];
 
+/**
+ * Two test projects. "unit" is src/**: fast, and the Stop hook runs the ones
+ * related to changed files. "e2e" is e2e/**: tests that run the real app the way
+ * a user would. They import nothing from src/, so only the full tier runs them.
+ */
+const TEST_PROJECTS = [
+  { extends: true, test: { name: "unit", include: ["src/**/*.test.ts", "src/**/*.test.tsx"] } },
+  { extends: true, test: { name: "e2e", include: ["e2e/**/*.test.ts"], testTimeout: 30_000 } },
+];
+
 /** Every rule is an error: there are no warnings to ignore. */
 const rules = {
   // No escape hatches from the type system.
@@ -56,7 +66,7 @@ export function rawStack() {
     },
     fmt: {},
     test: {
-      include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+      projects: TEST_PROJECTS,
       passWithNoTests: true,
     },
     staged: {

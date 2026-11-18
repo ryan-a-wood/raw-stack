@@ -7,6 +7,7 @@ Guardrails for TypeScript projects on [Vite+](https://viteplus.dev), built so ag
 - **Deep modules** enforced by dependency-cruiser: each `src/modules/<name>/index.ts` is the module's only way in. Also no cycles, orphans, undeclared deps or dev deps in shipped code.
 - **Guard**: no suppression comments, and project config can't loosen the shared rules.
 - **Claude Code hooks** for a tiered verify loop: lint after each edit (about 0.4 s), the fast tier on Stop (1 to 3 s, blocking), the full tier before a PR.
+- **E2e first**: the template has an `e2e/` test project that runs the real app, a `FEATURES.md` map of what the app does, and a `verify` skill that drives both.
 
 This repo is two things:
 
@@ -16,7 +17,7 @@ This repo is two things:
 ## Start a project
 
 ```bash
-pnpm dlx giget@3 gh:ryan-a-wood/raw-stack/template#v0.1.0 my-app
+pnpm dlx giget@3 gh:ryan-a-wood/raw-stack/template#v0.2.0 my-app
 cd my-app && git init && pnpm install
 ```
 
@@ -29,7 +30,7 @@ Change the tag in `package.json` (`"raw-stack": "github:ryan-a-wood/raw-stack#v0
 ## CLI
 
 - `raw-stack verify`: fast tier. `vp check --fix`, tests related to files changed on this branch, dependency-cruiser on `src/`, guard.
-- `raw-stack verify --full`: everything, all tests, no fixes.
+- `raw-stack verify --full`: everything, no fixes: unit tests and the e2e tests in `e2e/` (they run the real app), plus the rest.
 - `raw-stack guard [files...]`: suppression comments and config overrides.
 
 ## Working on raw-stack

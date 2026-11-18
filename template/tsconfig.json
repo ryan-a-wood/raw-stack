@@ -1,4 +1,4 @@
 {
   "extends": "raw-stack/tsconfig.json",
-  "include": ["src", "*.ts"]
+  "include": ["src", "e2e", "*.ts"]
 }

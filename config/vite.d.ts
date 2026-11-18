@@ -1,7 +1,7 @@
 export interface RawStackConfig {
   lint: Record<string, unknown>;
   fmt: Record<string, unknown>;
-  test: { include: string[]; passWithNoTests: boolean };
+  test: { projects: Array<Record<string, unknown>>; passWithNoTests: boolean };
   staged: Record<string, string | string[]>;
 }
 

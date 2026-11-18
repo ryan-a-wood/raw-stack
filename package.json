@@ -1,6 +1,6 @@
 {
   "name": "raw-stack",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Shared guardrails for TypeScript projects on Vite+: strict tsconfig, lint rules, deep-module boundaries, and fast agent verify hooks.",
   "license": "MIT",
   "repository": {
