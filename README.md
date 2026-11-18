@@ -17,7 +17,7 @@ This repo is two things:
 ## Start a project
 
 ```bash
-pnpm dlx giget@3 gh:ryan-a-wood/raw-stack/template#v0.1.0 my-app
+pnpm dlx giget@3 gh:ryan-a-wood/raw-stack/template#v0.2.0 my-app
 cd my-app && git init && pnpm install
 ```
 
