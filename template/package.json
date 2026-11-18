@@ -1,0 +1,17 @@
+{
+  "name": "app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts",
+    "verify": "raw-stack verify --full",
+    "prepare": "vp config"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "raw-stack": "github:ryan-a-wood/raw-stack#v0.1.0",
+    "typescript": "^7.0.2",
+    "vite-plus": "catalog:"
+  }
+}

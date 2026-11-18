@@ -1,0 +1,36 @@
+{
+  "name": "raw-stack",
+  "version": "0.1.0",
+  "description": "Shared guardrails for TypeScript projects on Vite+: strict tsconfig, lint rules, deep-module boundaries, and fast agent verify hooks.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryan-a-wood/raw-stack.git"
+  },
+  "type": "module",
+  "files": [
+    "bin",
+    "config",
+    "hooks",
+    "lib"
+  ],
+  "bin": {
+    "raw-stack": "./bin/raw-stack.js"
+  },
+  "exports": {
+    "./vite": {
+      "types": "./config/vite.d.ts",
+      "default": "./config/vite.js"
+    },
+    "./tsconfig.json": "./config/tsconfig.json",
+    "./dependency-cruiser": "./config/dependency-cruiser.cjs",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "dependency-cruiser": "^18.8.0",
+    "@swc/core": "^1.16.22"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

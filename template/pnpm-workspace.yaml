@@ -1,0 +1,13 @@
+catalog:
+  vite: npm:@voidzero-dev/vite-plus-core@1.4.0
+  vite-plus: 1.4.0
+overrides:
+  vite@*: "catalog:"
+peerDependencyRules:
+  allowAny:
+    - vite
+  allowedVersions:
+    vite: "*"
+# @swc/core ships its binary as an optional dependency; its install script is not needed.
+allowBuilds:
+  "@swc/core": false

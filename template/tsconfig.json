@@ -1,0 +1,4 @@
+{
+  "extends": "raw-stack/tsconfig.json",
+  "include": ["src", "*.ts"]
+}
