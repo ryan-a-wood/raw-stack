@@ -4,6 +4,7 @@
 // raw-stack guard [files...]  suppression comments and config overrides
 import { guard } from "../lib/guard.js";
 import { findRoot, projectFiles } from "../lib/project.js";
+import { testConfigProblems } from "../lib/test-config.js";
 import { report, verifyChanged, verifyFull } from "../lib/verify.js";
 
 const [command, ...args] = process.argv.slice(2);
@@ -15,7 +16,7 @@ if (command === "verify") {
   process.exitCode = steps.every((s) => s.ok) ? 0 : 1;
 } else if (command === "guard") {
   const files = args.length > 0 ? args.map((f) => (f.startsWith(root) ? f.slice(root.length + 1) : f)) : projectFiles(root);
-  const problems = guard(root, files);
+  const problems = [...guard(root, files), ...(await testConfigProblems(root))];
   if (problems.length > 0) console.error(problems.join("\n"));
   process.exitCode = problems.length > 0 ? 1 : 0;
 } else {

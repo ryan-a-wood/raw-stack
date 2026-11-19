@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { isAbsolute, relative } from "node:path";
 import { guard } from "../lib/guard.js";
 import { findRoot, run, SOURCE_FILE, vpCommand } from "../lib/project.js";
+import { testConfigProblems } from "../lib/test-config.js";
 
 const input = JSON.parse(readFileSync(0, "utf8"));
 const root = findRoot(input.cwd ?? process.cwd());
@@ -14,6 +15,7 @@ const inProject = file !== "" && !file.startsWith("..") && !isAbsolute(file);
 
 if (inProject && !/(^|\/)node_modules\//.test(file)) {
   const problems = guard(root, [file]);
+  if (file === "vite.config.ts") problems.push(...(await testConfigProblems(root)));
   if (SOURCE_FILE.test(file)) {
     const lint = await run("lint", vpCommand(root), ["lint", "--format", "agent", file], root);
     if (!lint.ok) problems.unshift(lint.output.trim());
