@@ -14,14 +14,18 @@ const PROPERTY_SETUP = fileURLToPath(new URL("./property-setup.js", import.meta.
  * related to changed files. "e2e" is e2e/**: tests that run the real app the way
  * a user would. They import nothing from src/, so only the full tier runs them.
  * Property tests (fast-check) are unit tests: the setup file sets their run count.
+ * Mutation testing (RAW_STACK_MUTATION, set by raw-stack verify --full) loads only
+ * "unit": the e2e tests run the app in a child process, where Stryker can't
+ * switch mutants, so they can't kill any.
  */
-const TEST_PROJECTS = [
-  {
-    extends: true,
-    test: { name: "unit", include: ["src/**/*.test.ts", "src/**/*.test.tsx"], setupFiles: [PROPERTY_SETUP] },
-  },
-  { extends: true, test: { name: "e2e", include: ["e2e/**/*.test.ts"], testTimeout: 30_000 } },
-];
+const UNIT_PROJECT = {
+  extends: true,
+  test: { name: "unit", include: ["src/**/*.test.ts", "src/**/*.test.tsx"], setupFiles: [PROPERTY_SETUP] },
+};
+const E2E_PROJECT = { extends: true, test: { name: "e2e", include: ["e2e/**/*.test.ts"], testTimeout: 30_000 } };
+/** Both test projects: what every vite.config.ts must resolve to outside mutation runs. */
+export const TEST_PROJECTS = [UNIT_PROJECT, E2E_PROJECT];
+const testProjects = () => (process.env["RAW_STACK_MUTATION"] === "1" ? [UNIT_PROJECT] : TEST_PROJECTS);
 
 /** Every rule is an error: there are no warnings to ignore. */
 const rules = {
@@ -75,7 +79,7 @@ export function rawStack() {
     },
     fmt: {},
     test: {
-      projects: TEST_PROJECTS,
+      projects: testProjects(),
       passWithNoTests: true,
     },
     staged: {

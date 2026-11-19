@@ -9,7 +9,7 @@ A change is done when you've seen it work in the running app. Passing unit tests
 
 ## Steps
 
-1. **Full tier.** Run `pnpm verify`. It runs format, lint, type checks, the unit tests (property tests at 1000 runs each), the e2e tests in `e2e/`, dependency-cruiser and the guard. Fix everything it reports.
+1. **Full tier.** Run `pnpm verify`. It runs format, lint, type checks, the unit tests (property tests at 1000 runs each), the e2e tests in `e2e/`, mutation testing on the source files you changed, dependency-cruiser and the guard. Fix everything it reports. For a surviving mutant, add a test that fails on that change; don't delete or weaken the code just to raise the score unless the code is truly unneeded.
 2. **Run the app.** Use each feature your change touches, the way `FEATURES.md` describes it, and compare what you see with what it says. For this app that means running `node src/main.ts` with and without a name.
 3. **Cover the change end to end.** A new or changed feature needs its `FEATURES.md` entry and an e2e test in `e2e/` that runs the app and checks what the user sees. E2e tests start the real app (a process, a server, or a browser with Playwright) and don't import from `src/`. If the change adds or changes logic over many possible inputs, also add or update a property test in the module (see `AGENTS.md`).
 4. **Review.** Do the remaining steps in the home repo's `docs/verify.md`, such as the fresh-context code review.
