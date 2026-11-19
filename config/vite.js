@@ -2,15 +2,24 @@
 // The raw-stack blocks for vite.config.ts. Spread rawStack() into defineConfig and
 // don't override lint here: `raw-stack guard` fails if vite.config.ts touches lint.
 
+import { fileURLToPath } from "node:url";
+
 const TEST_FILES = ["**/*.test.ts", "**/*.test.tsx"];
+
+/** Sets fast-check's run count for property tests. See property-setup.js. */
+const PROPERTY_SETUP = fileURLToPath(new URL("./property-setup.js", import.meta.url));
 
 /**
  * Two test projects. "unit" is src/**: fast, and the Stop hook runs the ones
  * related to changed files. "e2e" is e2e/**: tests that run the real app the way
  * a user would. They import nothing from src/, so only the full tier runs them.
+ * Property tests (fast-check) are unit tests: the setup file sets their run count.
  */
 const TEST_PROJECTS = [
-  { extends: true, test: { name: "unit", include: ["src/**/*.test.ts", "src/**/*.test.tsx"] } },
+  {
+    extends: true,
+    test: { name: "unit", include: ["src/**/*.test.ts", "src/**/*.test.tsx"], setupFiles: [PROPERTY_SETUP] },
+  },
   { extends: true, test: { name: "e2e", include: ["e2e/**/*.test.ts"], testTimeout: 30_000 } },
 ];
 
