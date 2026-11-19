@@ -9,6 +9,7 @@ Guardrails for TypeScript projects on [Vite+](https://viteplus.dev), built so ag
 - **Claude Code hooks** for a tiered verify loop: lint after each edit (about 0.4 s), the fast tier on Stop (1 to 3 s, blocking), the full tier before a PR.
 - **E2e first**: the template has an `e2e/` test project that runs the real app, a `FEATURES.md` map of what the app does, and a `verify` skill that drives both.
 - **Property tests**: [fast-check](https://fast-check.dev) generates inputs and checks a rule holds for all of them. raw-stack sets the run count (100 per property, 1000 in the full tier), and the guard rejects `numRuns`, `seed` and the other settings that weaken a property.
+- **Expect tests** that need a person to change: inline snapshots (`toMatchInlineSnapshot`) in `e2e/` only, where they record what the user sees. The full tier never writes a snapshot, the guard rejects them in unit tests and rejects snapshot files, and the template's CI fails on any changed or removed snapshot until a maintainer adds the `snapshots-approved` label to the PR.
 
 This repo is two things:
 
@@ -18,7 +19,7 @@ This repo is two things:
 ## Start a project
 
 ```bash
-pnpm dlx giget@3 gh:ryan-a-wood/raw-stack/template#v0.3.0 my-app
+pnpm dlx giget@3 gh:ryan-a-wood/raw-stack/template#v0.4.0 my-app
 cd my-app && git init && pnpm install
 ```
 
@@ -26,13 +27,14 @@ Then rename the package in `package.json` and the heading in `AGENTS.md`.
 
 ## Update a project
 
-Change the tag in `package.json` (`"raw-stack": "github:ryan-a-wood/raw-stack#v0.3.0"`) and run `pnpm install`.
+Change the tag in `package.json` (`"raw-stack": "github:ryan-a-wood/raw-stack#v0.4.0"`) and run `pnpm install`.
 
 ## CLI
 
 - `raw-stack verify`: fast tier. `vp check --fix`, tests related to files changed on this branch, dependency-cruiser on `src/`, guard.
-- `raw-stack verify --full`: everything, no fixes: unit tests with 1000 runs per property test, the e2e tests in `e2e/` (they run the real app), plus the rest.
-- `raw-stack guard [files...]`: suppression comments, fast-check settings that weaken a property, and config overrides.
+- `raw-stack verify --full`: everything, no fixes: unit tests with 1000 runs per property test, never writing snapshots, the e2e tests in `e2e/` (they run the real app), plus the rest.
+- `raw-stack guard [files...]`: suppression comments, fast-check settings that weaken a property, snapshots outside `e2e/` or in separate files, and config overrides.
+- `raw-stack snapshots [--base <ref>] [--approved]`: compares the inline snapshots with where the branch left `<ref>` (default: the default branch). Lists new ones, and fails on changed or removed ones unless `--approved`. The template's CI passes `--approved` only when the PR has the `snapshots-approved` label.
 
 ## Working on raw-stack
 

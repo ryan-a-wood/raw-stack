@@ -1,0 +1,40 @@
+# The full verify tier on every PR and push to main: unit, property and e2e
+# tests, lint, type checks, dependency-cruiser, guard. It never writes snapshots.
+#
+# On PRs, `raw-stack snapshots` lists new snapshots for review and fails on any
+# snapshot that was changed or removed, until a maintainer adds the
+# snapshots-approved label. Adding or removing the label re-runs it.
+name: verify
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify
+      - name: snapshots
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: origin/${{ github.base_ref }}
+          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'snapshots-approved') && '--approved' || '' }}
+        run: pnpm exec raw-stack snapshots --base "$BASE" $APPROVED
