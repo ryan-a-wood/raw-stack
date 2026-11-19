@@ -1,0 +1,31 @@
+# Scaffold the template against this checkout and run its full verify tier:
+# unit, property and e2e tests, lint, type checks, dependency-cruiser, guard.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  try-template:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # try-template.sh commits the scaffold, which needs an identity.
+      GIT_AUTHOR_NAME: ci
+      GIT_AUTHOR_EMAIL: ci@localhost
+      GIT_COMMITTER_NAME: ci
+      GIT_COMMITTER_EMAIL: ci@localhost
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: scripts/try-template.sh "$RUNNER_TEMP/app"
