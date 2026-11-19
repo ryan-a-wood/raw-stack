@@ -36,10 +36,49 @@ Change the tag in `package.json` (`"raw-stack": "github:ryan-a-wood/raw-stack#v0
 - `raw-stack verify`: fast tier. `vp check --fix`, tests related to files changed on this branch, dependency-cruiser on `src/`, guard.
 - `raw-stack verify --full`: everything, no fixes: unit tests with 1000 runs per property test, never writing snapshots, the e2e tests in `e2e/` (they run the real app), plus the rest.
 - `raw-stack guard [files...]`: suppression comments, fast-check settings that weaken a property, snapshots outside `e2e/` or in separate files, test retries, and config overrides.
+- `raw-stack cloudflare-secrets [--repo owner/name] [--account-id id] [--config file] [--dry-run]`: creates a Cloudflare API token scoped to what the project's wrangler config deploys and stores it as the GitHub Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. See [Deploy to Cloudflare](#deploy-to-cloudflare).
 - `raw-stack snapshots [--base <ref>] [--approved]`: compares the inline snapshots with where the branch left `<ref>` (default: the default branch). Lists new ones, and fails on changed or removed ones unless `--approved`. The template's CI passes `--approved` only when the PR has the `snapshots-approved` label.
+
+## Deploy to Cloudflare
+
+For a project that deploys a Worker from GitHub Actions, run this on your own machine from the repo root:
+
+```bash
+pnpm exec raw-stack cloudflare-secrets --dry-run   # show the permissions, create nothing
+pnpm exec raw-stack cloudflare-secrets
+```
+
+It reads `wrangler.jsonc`, `wrangler.json` or `wrangler.toml` (the top level and every `env.*`), creates an account-owned API token named `github-actions <owner>/<repo>` with only the permissions that config needs, and sets the repo's `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets with `gh secret set`. A deploy workflow uses those two names:
+
+| The config has | The token gets |
+| --- | --- |
+| any Worker | Workers Scripts Write, Account Settings Read (account) |
+| `d1_databases` | D1 Write (account) |
+| `kv_namespaces` | Workers KV Storage Write (account) |
+| `r2_buckets` | Workers R2 Storage Write (account) |
+| `queues` | Queues Write (account) |
+| `routes` or `route`, including custom domains | Workers Routes Write on each route's zone only |
+
+Cloudflare's Workers, D1, KV, R2 and Queues permissions cover the whole account; they can't be limited to one Worker or database. Custom domains need no DNS permission: Workers Routes Write on the zone covers them. Anything else in the config (Vectorize, Hyperdrive, Workers AI, Workflows and so on) stops the command before it creates anything, so add its permission here first.
+
+The token's value is never printed, logged, written to disk or passed as an argument: it goes from Cloudflare's response to `gh`'s stdin. Rerunning is safe: it creates a fresh token, updates the secrets, then revokes the older tokens with the same name, and says so plainly if a revoke fails. If setting a secret fails, it revokes the new token and leaves everything as it was. It checks that `gh` is signed in and can manage the repo's secrets, that the bootstrap token works, and that every zone resolves before it creates anything.
+
+**One-time setup: the bootstrap token.** The command uses a Cloudflare API token that can only create API tokens. Make it once:
+
+1. In the Cloudflare dashboard, go to **Manage Account > Account API Tokens > Create Token > Custom token**.
+2. Permissions: **Account > Account API Tokens > Edit**. Add **Zone > Zone > Read** (all zones in the account) so the command can find the zones your routes use; without it, set `zone_id` on each route.
+3. Account resources: your account only.
+4. Store it where the command looks, in this order:
+   - the macOS keychain (recommended): `security add-generic-password -s raw-stack-cloudflare-bootstrap -a "$USER" -w` and paste the token at the prompt;
+   - the file `~/.config/raw-stack/cloudflare-bootstrap-token` (or under `$XDG_CONFIG_HOME`), mode 600; the command refuses a file others can read;
+   - or `$RAW_STACK_CLOUDFLARE_BOOTSTRAP_TOKEN`, set yourself for one run.
+
+Keep it on your machine only: not in a repo, not in CI, not in an agent's environment.
+
+The account is the `--account-id` flag, then the config's `account_id`, then `$CLOUDFLARE_ACCOUNT_ID`, then the one account the bootstrap token can see.
 
 ## Working on raw-stack
 
-`scripts/try-template.sh [dir]` copies the template, points it at this checkout, installs and runs the full tier. Run it after every change. CI (`.github/workflows/ci.yml`) runs it on every PR and push to `main`.
+`scripts/try-template.sh [dir]` copies the template, points it at this checkout, installs and runs the full tier. Run it after every change. `npm test` runs raw-stack's own tests in `test/` (for example `cloudflare-secrets` against a fake Cloudflare API and a fake `gh`). CI (`.github/workflows/ci.yml`) runs both on every PR and push to `main`.
 
 To edit the template with type checking in your editor, run `scripts/install-template.sh` once. It installs `template/` in place with `raw-stack` linked to this checkout. Without it the editor can't resolve `raw-stack/tsconfig.json` or `vite-plus`, so it falls back to default compiler options and flags every `.ts` import. To release, tag `vX.Y.Z`, push the tag, and bump the ref in `template/package.json`.

@@ -1,5 +1,6 @@
 # Scaffold the template against this checkout and run its full verify tier:
 # unit, property and e2e tests, lint, type checks, dependency-cruiser, guard.
+# Then raw-stack's own tests (test/).
 name: ci
 
 on:
@@ -29,3 +30,14 @@ jobs:
         with:
           node-version: 24
       - run: scripts/try-template.sh "$RUNNER_TEMP/app"
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --no-package-lock
+      - run: npm test
