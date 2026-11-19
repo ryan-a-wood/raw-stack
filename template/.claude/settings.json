@@ -30,12 +30,10 @@
       "Edit(/.dependency-cruiser.cjs)",
       "Edit(/.claude/settings.json)",
       "Edit(/pnpm-workspace.yaml)",
-      "Edit(/.github/**)",
       "Write(/tsconfig.json)",
       "Write(/.dependency-cruiser.cjs)",
       "Write(/.claude/settings.json)",
-      "Write(/pnpm-workspace.yaml)",
-      "Write(/.github/**)"
+      "Write(/pnpm-workspace.yaml)"
     ]
   },
   "extraKnownMarketplaces": {
