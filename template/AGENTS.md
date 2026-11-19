@@ -22,6 +22,8 @@ A TypeScript project on [raw-stack](https://github.com/ryan-a-wood/raw-stack): V
 - **E2e tests come first.** `e2e/` holds tests that run the real app and check what the user sees, one per feature in `FEATURES.md`. They are the hardest tests to fool: the feature either works or it doesn't. A new feature gets its `FEATURES.md` entry and its e2e test in the same change.
 - **Property tests** come next. A property test states a rule that holds for every input, and [fast-check](https://fast-check.dev) tries many generated inputs to break it, then shrinks a failure to the smallest case. Write one for any module with logic over a wide input space: parsing, formatting, math, state transitions, anything with a round trip (`decode(encode(x))` equals `x`). They are unit tests, named `<name>.property.test.ts` next to the module. See `src/modules/greeting/greeting.property.test.ts`.
 - raw-stack sets how many inputs each property tries: 100 in the fast tier, 1000 in `pnpm verify`. Don't set `numRuns`, `seed`, `path` or time limits: the guard fails on them. When a property fails, fix the code, or the property if the rule was wrong. You can replay the reported seed while debugging, then remove it.
+- **Expect tests** (inline snapshots) record what the app printed and fail when it changes. Use them in `e2e/` for output that's tedious to write by hand: CLI output, rendered pages, error text, API responses. Write `expect(output).toMatchInlineSnapshot()` empty, run `vp test --project e2e` to fill it in, then read what it recorded and check it against `FEATURES.md`: whatever it recorded becomes the expected output. Only inline snapshots, only in `e2e/`: the guard rejects them in unit tests, where they would only copy the code, and rejects snapshot files.
+- **Don't change a recorded snapshot yourself** unless the output is meant to change. If it is, update it, say why in the PR, and leave approval to a maintainer: CI fails on any edited or removed snapshot until a maintainer adds the `snapshots-approved` label. Never add that label. `pnpm verify` never writes snapshots, so an empty one fails there.
 - **Unit tests** live next to the code in `src/modules/<name>/` and test a module through its `index.ts`. Use examples for the cases a property can't express.
 - E2e tests don't import from `src/`, so the Stop hook doesn't run them. `pnpm verify` and CI do.
 
@@ -32,7 +34,7 @@ The rules are strict on purpose. Fix the cause; don't work around a rule.
 - No `any`, no non-null `!`, no unsafe calls on untyped values, no floating promises, exhaustive `switch`.
 - Functions up to 60 lines, files up to 300, at most 4 parameters.
 - No suppression comments: `oxlint-disable`, `eslint-disable`, `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`.
-- Agents can't edit `tsconfig.json`, `.dependency-cruiser.cjs`, `pnpm-workspace.yaml` or `.claude/settings.json`. `vite.config.ts` can add plugins and test settings (keep `test: { ...rawStack().test, ... }`), but not lint settings, and it can't change the test projects, `include`, `exclude`, `retry` or `allowOnly`. The guard loads the config and checks what it resolves to. If a rule is wrong, say so in the PR, or open an issue in `ryan-a-wood/raw-stack`.
+- Agents can't edit `tsconfig.json`, `.dependency-cruiser.cjs`, `pnpm-workspace.yaml`, `.claude/settings.json` or `.github/`. `vite.config.ts` can add plugins and test settings (keep `test: { ...rawStack().test, ... }`), but not lint settings, and it can't change the test projects, `include`, `exclude`, `retry`, `allowOnly` or snapshot `update`. The guard loads the config and checks what it resolves to. If a rule is wrong, say so in the PR, or open an issue in `ryan-a-wood/raw-stack`.
 
 ## The verify loop
 
@@ -43,6 +45,8 @@ Hooks in `.claude/settings.json` run the fast tiers for you:
 | After each edit | Lint the edited file, check it for suppression comments and fast-check settings                                                                                                      | about 0.4 s |
 | When you stop   | `vp check --fix`, tests related to changed files (properties at 100 runs), dependency-cruiser, config guard. Blocks until it passes. Skipped if nothing changed since the last pass. | 1 to 3 s    |
 | Before a PR     | The `verify` skill: `pnpm verify` (everything: unit, property at 1000 runs, e2e), then run the app and check each feature you touched against `FEATURES.md`                          | longer      |
+
+CI (`.github/workflows/verify.yml`) runs `pnpm verify` on every PR and push to `main`, and on PRs `raw-stack snapshots`: it lists new snapshots for review and fails on changed or removed ones until the PR has the `snapshots-approved` label.
 
 If the Stop hook blocks, fix what it reports. If it reports the same failure and you've changed nothing, it lets you stop: say what's still failing.
 
