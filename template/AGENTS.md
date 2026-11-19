@@ -26,6 +26,7 @@ A TypeScript project on [raw-stack](https://github.com/ryan-a-wood/raw-stack): V
 - **Don't change a recorded snapshot yourself** unless the output is meant to change. If it is, update it, say why in the PR, and leave approval to a maintainer: CI fails on any edited or removed snapshot until a maintainer adds the `snapshots-approved` label. Never add that label. `pnpm verify` never writes snapshots, so an empty one fails there.
 - **Unit tests** live next to the code in `src/modules/<name>/` and test a module through its `index.ts`. Use examples for the cases a property can't express.
 - E2e tests don't import from `src/`, so the Stop hook doesn't run them. `pnpm verify` and CI do.
+- **Zero retries.** A test that passes only on a second try is hiding a bug in the code or in the test. When a test is flaky, fix the cause right away: a race, shared state between tests, a missing `await`, a fixed port, real time or randomness the test doesn't control. If the test no longer states a requirement in `FEATURES.md`, delete it and say why in the PR. The guard rejects every way to retry: `retry` in `vite.config.ts` or on a test tag, `{ retry }` on a test or `describe`, Playwright `retries`, `--retry` or `--retries` in a script or workflow, and a `vitest.config.*` file, which Vitest would read instead of `vite.config.ts`.
 
 ## Guardrails
 
@@ -34,7 +35,7 @@ The rules are strict on purpose. Fix the cause; don't work around a rule.
 - No `any`, no non-null `!`, no unsafe calls on untyped values, no floating promises, exhaustive `switch`.
 - Functions up to 60 lines, files up to 300, at most 4 parameters.
 - No suppression comments: `oxlint-disable`, `eslint-disable`, `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`.
-- Agents can't edit `tsconfig.json`, `.dependency-cruiser.cjs`, `pnpm-workspace.yaml`, `.claude/settings.json` or `.github/`. `vite.config.ts` can add plugins and test settings (keep `test: { ...rawStack().test, ... }`), but not lint settings, and it can't change the test projects, `include`, `exclude`, `retry`, `allowOnly` or snapshot `update`. The guard loads the config and checks what it resolves to. If a rule is wrong, say so in the PR, or open an issue in `ryan-a-wood/raw-stack`.
+- Agents can't edit `tsconfig.json`, `.dependency-cruiser.cjs`, `pnpm-workspace.yaml`, `.claude/settings.json` or `.github/`. `vite.config.ts` can add plugins and test settings (keep `test: { ...rawStack().test, ... }`), but not lint settings, and it can't change the test projects, `include`, `exclude`, `retry`, `allowOnly` or snapshot `update`. Test settings go in `vite.config.ts` only: the guard rejects `vitest.config.*`. The guard loads the config and checks what it resolves to. If a rule is wrong, say so in the PR, or open an issue in `ryan-a-wood/raw-stack`.
 
 ## The verify loop
 
