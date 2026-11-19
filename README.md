@@ -35,6 +35,6 @@ Change the tag in `package.json` (`"raw-stack": "github:ryan-a-wood/raw-stack#v0
 
 ## Working on raw-stack
 
-`scripts/try-template.sh [dir]` copies the template, points it at this checkout, installs and runs the full tier. Run it after every change.
+`scripts/try-template.sh [dir]` copies the template, points it at this checkout, installs and runs the full tier. Run it after every change. CI runs it on every PR and push to `main`, and new projects get their own CI that runs `pnpm verify`.
 
 To edit the template with type checking in your editor, run `scripts/install-template.sh` once. It installs `template/` in place with `raw-stack` linked to this checkout. Without it the editor can't resolve `raw-stack/tsconfig.json` or `vite-plus`, so it falls back to default compiler options and flags every `.ts` import. To release, tag `vX.Y.Z`, push the tag, and bump the ref in `template/package.json`.
