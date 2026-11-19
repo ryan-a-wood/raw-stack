@@ -1,6 +1,6 @@
 {
   "name": "raw-stack",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Shared guardrails for TypeScript projects on Vite+: strict tsconfig, lint rules, deep-module boundaries, property tests, expect tests with approved snapshot changes, and fast agent verify hooks.",
   "license": "MIT",
   "repository": {
@@ -32,7 +32,8 @@
   },
   "dependencies": {
     "dependency-cruiser": "^18.8.0",
-    "@swc/core": "^1.16.22"
+    "@swc/core": "^1.16.22",
+    "smol-toml": "^1.9.1"
   },
   "peerDependencies": {
     "fast-check": "^4.0.0"
@@ -44,5 +45,8 @@
   },
   "engines": {
     "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
   }
 }

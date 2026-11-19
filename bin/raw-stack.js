@@ -4,6 +4,9 @@
 // raw-stack guard [files...]  suppression comments and config overrides
 // raw-stack snapshots [--base <ref>] [--approved]
 //                             fail on snapshots changed since the branch left <ref>
+// raw-stack cloudflare-secrets [--repo owner/name] [--account-id id] [--config file] [--dry-run]
+//                             scoped Cloudflare deploy token -> GitHub Actions secrets
+import { cloudflareSecrets, USAGE as CLOUDFLARE_USAGE } from "../lib/cloudflare/deploy-token.js";
 import { guard } from "../lib/guard.js";
 import { findRoot, projectFiles } from "../lib/project.js";
 import { testConfigProblems } from "../lib/test-config.js";
@@ -33,7 +36,16 @@ if (command === "verify") {
     console.error(`raw-stack snapshots: ${err instanceof Error ? err.message : String(err)}`);
     process.exitCode = 1;
   }
+} else if (command === "cloudflare-secrets") {
+  process.exitCode = await cloudflareSecrets({
+    root,
+    args,
+    env: process.env,
+    out: { log: (line) => console.log(line), error: (line) => console.error(line) },
+  });
 } else {
-  console.error("usage: raw-stack verify [--full] | raw-stack guard [files...] | raw-stack snapshots [--base <ref>] [--approved]");
+  console.error(
+    `usage: raw-stack verify [--full] | raw-stack guard [files...] | raw-stack snapshots [--base <ref>] [--approved]\n${CLOUDFLARE_USAGE}`,
+  );
   process.exitCode = 2;
 }
