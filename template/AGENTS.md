@@ -6,7 +6,7 @@ A TypeScript project on [raw-stack](https://github.com/ryan-a-wood/raw-stack): V
 
 - `vp check`: format (Oxfmt), lint (Oxlint, type-aware) and type check. `vp check --fix` fixes formatting and fixable lint.
 - `vp test`: run the tests (Vitest). Import test APIs from `vite-plus/test`. `vp test --project unit` or `--project e2e` runs one kind.
-- `pnpm verify`: the full verify tier, e2e tests included. Run it before opening a PR.
+- `pnpm verify`: the full verify tier, e2e tests included. Run it before opening a PR. CI (`.github/workflows/ci.yml`) runs it on every PR and push to `main`.
 - `node src/main.ts`: run the app. Node runs the TypeScript directly.
 
 ## Code layout: deep modules

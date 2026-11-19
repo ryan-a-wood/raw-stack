@@ -15,6 +15,6 @@ node -e '
 ' "$repo"
 git init -q -b main
 pnpm install --silent
-git add -A && git -c commit.gpgsign=false commit -qm "scaffold" --no-verify
+git add -A && git -c user.name=raw-stack -c user.email=raw-stack@localhost -c commit.gpgsign=false commit -qm "scaffold" --no-verify
 node_modules/.bin/raw-stack verify --full
 echo "template OK at $dir"
