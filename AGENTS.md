@@ -4,8 +4,13 @@ Shared guardrails for TypeScript projects, plus the starter template. See [READM
 
 ## Layout
 
+<<<<<<< HEAD
 - `config/`: what projects extend: `tsconfig.json`, `vite.js` (`rawStack()` for vite.config.ts), `dependency-cruiser.cjs`, `playwright.js` (`rawStackPlaywright()` for projects with browser tests), and `property-setup.js`, which sets fast-check's run count for the unit tests. fast-check is an optional peer dependency, not a dependency.
 - `lib/`: the verify tiers and the guard, shared by the CLI and the hooks. `test-config.js` loads a project's `vite.config.ts` and checks its resolved test settings. `snapshots.js` finds inline snapshots and compares them with the base branch. `retries.js` rejects every way to retry a test. `browser-tests.js` checks Playwright tests and config.
+=======
+- `config/`: what projects extend: `tsconfig.json`, `vite.js` (`rawStack()` for vite.config.ts), `dependency-cruiser.cjs`, and `property-setup.js`, which sets fast-check's run count for the unit tests. fast-check is an optional peer dependency, not a dependency.
+- `lib/`: the verify tiers and the guard, shared by the CLI and the hooks. `test-config.js` loads a project's `vite.config.ts` and checks its resolved test settings. `snapshots.js` finds inline snapshots and compares them with the base branch. `retries.js` rejects every way to retry a test.
+>>>>>>> origin/claude/project-thread-ddwno6
 - `bin/raw-stack.js`: the CLI (`verify`, `verify --full`, `guard`, `snapshots`).
 - `hooks/`: Claude Code hooks that projects reference from `node_modules/raw-stack/hooks/`.
 - `template/`: the starter project. Its `.claude/settings.json` wires up the hooks, and `.github/workflows/verify.yml` runs the full tier and the snapshot check in CI.
