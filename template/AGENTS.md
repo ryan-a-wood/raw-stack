@@ -25,7 +25,6 @@ A TypeScript project on [raw-stack](https://github.com/ryan-a-wood/raw-stack): V
 - **Expect tests** (inline snapshots) record what the app printed and fail when it changes. Use them in `e2e/` for output that's tedious to write by hand: CLI output, rendered pages, error text, API responses. Write `expect(output).toMatchInlineSnapshot()` empty, run `vp test --project e2e` to fill it in, then read what it recorded and check it against `FEATURES.md`: whatever it recorded becomes the expected output. Only inline snapshots, only in `e2e/`: the guard rejects them in unit tests, where they would only copy the code, and rejects snapshot files.
 - **Don't change a recorded snapshot yourself** unless the output is meant to change. If it is, update it, say why in the PR, and leave approval to a maintainer: CI fails on any edited or removed snapshot until a maintainer adds the `snapshots-approved` label. Never add that label. `pnpm verify` never writes snapshots, so an empty one fails there.
 - **Unit tests** live next to the code in `src/modules/<name>/` and test a module through its `index.ts`. Use examples for the cases a property can't express.
-<<<<<<< HEAD
 - E2e tests don't import from `src/`, so the Stop hook doesn't run them. `pnpm verify` and CI do. For a UI, e2e tests drive a browser: see Browser tests below.
 - **Zero retries.** A test that passes only on a second try is hiding a bug in the code or in the test. When a test is flaky, fix the cause right away: a race, shared state between tests, a missing `await`, a fixed port, real time or randomness the test doesn't control. If the test no longer states a requirement in `FEATURES.md`, delete it and say why in the PR. The guard rejects every way to retry: `retry` in `vite.config.ts` or on a test tag, `{ retry }` on a test or `describe`, Playwright `retries`, `--retry` or `--retries` in a script or workflow, and a `vitest.config.*` file, which Vitest would read instead of `vite.config.ts`.
 
@@ -62,10 +61,6 @@ Write browser tests so they stay fast and don't flake:
 - **Each test makes its own data**, with unique names (a random suffix), so tests can run in any order and in parallel without sharing state.
 - **Seed state through the API, not the UI**, but only for state that another e2e test already builds through the UI. Seeding signup in every test is fine only if one test still signs up by clicking through the form. Each seed helper names that test in a comment, `// UI covered by e2e/signup.spec.ts`, so deleting the UI test also shows the seed is now unproven.
 - **Once the app has login**, log in once in a setup project, save the session with `page.context().storageState({ path })`, and load it in the other projects with `use: { storageState }` and `dependencies: ["setup"]`. Keep one test that logs in through the form.
-=======
-- E2e tests don't import from `src/`, so the Stop hook doesn't run them. `pnpm verify` and CI do.
-- **Zero retries.** A test that passes only on a second try is hiding a bug in the code or in the test. When a test is flaky, fix the cause right away: a race, shared state between tests, a missing `await`, a fixed port, real time or randomness the test doesn't control. If the test no longer states a requirement in `FEATURES.md`, delete it and say why in the PR. The guard rejects every way to retry: `retry` in `vite.config.ts` or on a test tag, `{ retry }` on a test or `describe`, Playwright `retries`, `--retry` or `--retries` in a script or workflow, and a `vitest.config.*` file, which Vitest would read instead of `vite.config.ts`.
->>>>>>> origin/claude/project-thread-ddwno6
 
 ## Guardrails
 
