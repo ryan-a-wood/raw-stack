@@ -1,5 +1,6 @@
 # The full verify tier on every PR and push to main: unit, property and e2e
-# tests, lint, type checks, dependency-cruiser, guard. It never writes snapshots.
+# tests (browser tests too, when the project has playwright.config.ts), lint,
+# type checks, dependency-cruiser, guard. It never writes snapshots.
 #
 # On PRs, `raw-stack snapshots` lists new snapshots for review and fails on any
 # snapshot that was changed or removed, until a maintainer adds the
@@ -31,6 +32,17 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Browser tests only: cache Playwright's browsers so CI doesn't download
+      # them on every run. CI runs every browser; local runs use Chromium only.
+      - name: cache browsers
+        if: hashFiles('playwright.config.ts') != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: install browsers
+        if: hashFiles('playwright.config.ts') != ''
+        run: pnpm exec playwright install --with-deps
       - run: pnpm verify
       - name: snapshots
         if: github.event_name == 'pull_request'
