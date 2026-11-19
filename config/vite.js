@@ -4,7 +4,7 @@
 
 import { fileURLToPath } from "node:url";
 
-const TEST_FILES = ["**/*.test.ts", "**/*.test.tsx"];
+const TEST_FILES = ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts"];
 
 /** Sets fast-check's run count for property tests. See property-setup.js. */
 const PROPERTY_SETUP = fileURLToPath(new URL("./property-setup.js", import.meta.url));
