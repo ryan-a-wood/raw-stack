@@ -5,7 +5,7 @@ Shared guardrails for TypeScript projects, plus the starter template. See [READM
 ## Layout
 
 - `config/`: what projects extend: `tsconfig.json`, `vite.js` (`rawStack()` for vite.config.ts), `dependency-cruiser.cjs`, and `property-setup.js`, which sets fast-check's run count for the unit tests. fast-check is an optional peer dependency, not a dependency.
-- `lib/`: the verify tiers and the guard, shared by the CLI and the hooks.
+- `lib/`: the verify tiers and the guard, shared by the CLI and the hooks. `test-config.js` loads a project's `vite.config.ts` and checks its resolved test settings.
 - `bin/raw-stack.js`: the CLI (`verify`, `verify --full`, `guard`).
 - `hooks/`: Claude Code hooks that projects reference from `node_modules/raw-stack/hooks/`.
 - `template/`: the starter project. Its `.claude/settings.json` wires up the hooks.

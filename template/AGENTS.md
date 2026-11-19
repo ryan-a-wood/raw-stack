@@ -32,7 +32,7 @@ The rules are strict on purpose. Fix the cause; don't work around a rule.
 - No `any`, no non-null `!`, no unsafe calls on untyped values, no floating promises, exhaustive `switch`.
 - Functions up to 60 lines, files up to 300, at most 4 parameters.
 - No suppression comments: `oxlint-disable`, `eslint-disable`, `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`.
-- Agents can't edit `tsconfig.json`, `.dependency-cruiser.cjs`, `pnpm-workspace.yaml` or `.claude/settings.json`. `vite.config.ts` can add plugins and test settings but not lint settings. If a rule is wrong, say so in the PR, or open an issue in `ryan-a-wood/raw-stack`.
+- Agents can't edit `tsconfig.json`, `.dependency-cruiser.cjs`, `pnpm-workspace.yaml` or `.claude/settings.json`. `vite.config.ts` can add plugins and test settings (keep `test: { ...rawStack().test, ... }`), but not lint settings, and it can't change the test projects, `include`, `exclude`, `retry` or `allowOnly`. The guard loads the config and checks what it resolves to. If a rule is wrong, say so in the PR, or open an issue in `ryan-a-wood/raw-stack`.
 
 ## The verify loop
 
