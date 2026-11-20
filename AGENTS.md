@@ -17,4 +17,4 @@ Shared guardrails for TypeScript projects, plus the starter template. See [READM
 - Every change must pass `scripts/try-template.sh` and `npm test`. When you change a check, also prove it still fails on a violation: add the bad code to a scratch copy and run `raw-stack verify`.
 - dependency-cruiser must use the swc parser while TypeScript 7 has no JS compiler API. The verify step fails if it cruised 0 files.
 - Keep the hook paths stable (`hooks/after-edit.js`, `hooks/before-stop.js`): every project's settings point at them.
-- Releases are tags `vX.Y.Z`. Bump `template/package.json`'s `raw-stack` ref to the new tag.
+- Releases are tags `vX.Y.Z`. To release, bump `version` in `package.json` (and `package-lock.json`) and `template/package.json`'s `raw-stack` ref to the new tag in the PR. On the merge, `.github/workflows/release.yml` tags the commit. Don't push tags by hand.
