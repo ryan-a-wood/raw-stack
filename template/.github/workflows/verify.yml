@@ -17,9 +17,42 @@ permissions:
   contents: read
 
 jobs:
+  # Browser tests run inside Playwright's own image, which ships the browsers
+  # and the system libraries they need, so CI installs nothing for them. Its
+  # tag must match the project's Playwright version, read here from the
+  # lockfile. Without playwright.config.ts the image is empty and verify runs
+  # on the plain runner.
+  browsers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            pnpm-lock.yaml
+            playwright.config.ts
+          sparse-checkout-cone-mode: false
+      - id: image
+        run: |
+          [ -f playwright.config.ts ] || exit 0
+          version=$(grep -oE "^  '?@playwright/test@[0-9][^':(]*" pnpm-lock.yaml | head -1 | sed 's/.*@//')
+          if [ -z "$version" ]; then
+            echo "::error::playwright.config.ts exists but pnpm-lock.yaml has no @playwright/test."
+            exit 1
+          fi
+          echo "image=mcr.microsoft.com/playwright:v$version-noble" >> "$GITHUB_OUTPUT"
+
   verify:
+    needs: browsers
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    container:
+      image: ${{ needs.browsers.outputs.image }}
+      # The runner's own user, as Playwright's docs advise, so files in the
+      # workspace stay the runner's.
+      options: --user 1001
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,17 +65,6 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Browser tests only: cache Playwright's browsers so CI doesn't download
-      # them on every run. CI runs every browser; local runs use Chromium only.
-      - name: cache browsers
-        if: hashFiles('playwright.config.ts') != ''
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - name: install browsers
-        if: hashFiles('playwright.config.ts') != ''
-        run: pnpm exec playwright install --with-deps
       - run: pnpm verify
       - name: snapshots
         if: github.event_name == 'pull_request'
