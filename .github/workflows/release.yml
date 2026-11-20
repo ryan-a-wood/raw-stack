@@ -1,0 +1,29 @@
+# Tags each release on the push to main: when package.json's version has no
+# vX.Y.Z tag yet, this creates it on the pushed commit. Releases bump the
+# version in a PR, and the merge tags it, so nobody pushes tags by hand.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: |
+          tag="v$(node -p 'require("./package.json").version')"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag already exists."
+            exit 0
+          fi
+          git tag "$tag" "$GITHUB_SHA"
+          git push origin "$tag"
+          echo "Tagged $tag on $GITHUB_SHA."
