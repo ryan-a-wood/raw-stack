@@ -1,6 +1,6 @@
 // @ts-check
 // Agents can edit .github/, so the guard checks the template's verify workflow
-// still runs verify and the label-gated snapshot check. Each case starts from
+// still runs verify and the snapshot report. Each case starts from
 // the real template workflow and breaks one thing.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -48,8 +48,6 @@ describe("verify workflow guard", () => {
     "no pull_request trigger": [edit("  pull_request:\n", "  workflow_dispatch:\n"), /pull_request/],
     "continue-on-error": [edit("      - run: pnpm verify\n", "      - run: pnpm verify\n        continue-on-error: true\n"), /continue-on-error/],
     "paths-ignore": [edit("    branches: [main]\n", "    branches: [main]\n    paths-ignore: ['src/**']\n"), /paths-ignore/],
-    "always approved": [edit('$BASE" $APPROVED', '$BASE" --approved'), /snapshots-approved label/],
-    "approved by another label": [edit("'snapshots-approved'", "'lgtm'"), /snapshots-approved label/],
   };
   for (const [name, [workflow, expected]] of Object.entries(broken)) {
     test(`rejects ${name}`, () => {

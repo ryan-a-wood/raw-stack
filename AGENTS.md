@@ -5,11 +5,11 @@ Shared guardrails for TypeScript projects, plus the starter template. See [READM
 ## Layout
 
 - `config/`: what projects extend: `tsconfig.json`, `vite.js` (`rawStack()` for vite.config.ts), `dependency-cruiser.cjs`, `playwright.js` (`rawStackPlaywright()` for projects with browser tests), and `property-setup.js`, which sets fast-check's run count for the unit tests. fast-check is an optional peer dependency, not a dependency.
-- `lib/`: the verify tiers and the guard, shared by the CLI and the hooks. `test-config.js` loads a project's `vite.config.ts` and checks its resolved test settings. `snapshots.js` finds inline snapshots and compares them with the base branch. `retries.js` rejects every way to retry a test. `browser-tests.js` checks Playwright tests and config. `workflows.js` checks that the project's `.github/workflows/verify.yml` still runs verify and the label-gated snapshot check (agents may edit `.github/`). `cloudflare/` is `cloudflare-secrets`: `wrangler-config.js` reads what a wrangler config deploys, `deploy-token.js` creates the scoped token and sets the GitHub secrets.
+- `lib/`: the verify tiers and the guard, shared by the CLI and the hooks. `test-config.js` loads a project's `vite.config.ts` and checks its resolved test settings. `snapshots.js` finds inline snapshots and compares them with the base branch. `retries.js` rejects every way to retry a test. `browser-tests.js` checks Playwright tests and config. `workflows.js` checks that the project's `.github/workflows/verify.yml` still runs verify and the snapshot report (agents may edit `.github/`). `cloudflare/` is `cloudflare-secrets`: `wrangler-config.js` reads what a wrangler config deploys, `deploy-token.js` creates the scoped token and sets the GitHub secrets.
 - `bin/raw-stack.js`: the CLI (`verify`, `verify --full`, `guard`, `snapshots`, `cloudflare-secrets`).
 - `test/`: raw-stack's own tests, run with `npm test` (`node --test`). They run the real CLI against fakes; never against a real Cloudflare account or real GitHub secrets.
 - `hooks/`: Claude Code hooks that projects reference from `node_modules/raw-stack/hooks/`.
-- `template/`: the starter project. Its `.claude/settings.json` wires up the hooks, and `.github/workflows/verify.yml` runs the full tier and the snapshot check in CI.
+- `template/`: the starter project. Its `.claude/settings.json` wires up the hooks, and `.github/workflows/verify.yml` runs the full tier and the snapshot report in CI.
 
 ## Rules for changes here
 

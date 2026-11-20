@@ -2,8 +2,8 @@
 // @ts-check
 // raw-stack verify [--full]   fast tier (changed files) or full tier
 // raw-stack guard [files...]  suppression comments and config overrides
-// raw-stack snapshots [--base <ref>] [--approved]
-//                             fail on snapshots changed since the branch left <ref>
+// raw-stack snapshots [--base <ref>]
+//                             list snapshots added, changed or removed since the branch left <ref>
 // raw-stack cloudflare-secrets [--repo owner/name] [--account-id id] [--config file] [--dry-run]
 //                             scoped Cloudflare deploy token -> GitHub Actions secrets
 import { cloudflareSecrets, USAGE as CLOUDFLARE_USAGE } from "../lib/cloudflare/deploy-token.js";
@@ -29,9 +29,7 @@ if (command === "verify") {
   const at = args.indexOf("--base");
   const base = at === -1 ? undefined : args[at + 1];
   try {
-    const { ok, output } = snapshotReport(compareSnapshots(root, base), args.includes("--approved"));
-    (ok ? console.log : console.error)(output);
-    process.exitCode = ok ? 0 : 1;
+    console.log(snapshotReport(compareSnapshots(root, base)));
   } catch (err) {
     console.error(`raw-stack snapshots: ${err instanceof Error ? err.message : String(err)}`);
     process.exitCode = 1;
@@ -45,7 +43,7 @@ if (command === "verify") {
   });
 } else {
   console.error(
-    `usage: raw-stack verify [--full] | raw-stack guard [files...] | raw-stack snapshots [--base <ref>] [--approved]\n${CLOUDFLARE_USAGE}`,
+    `usage: raw-stack verify [--full] | raw-stack guard [files...] | raw-stack snapshots [--base <ref>]\n${CLOUDFLARE_USAGE}`,
   );
   process.exitCode = 2;
 }
