@@ -14,12 +14,18 @@ on:
 permissions:
   contents: read
 
+# For a project with one developer who merges each PR once it's green: uncomment
+# to skip the Playwright browser tests on PRs and run them only on the push to
+# main, which still gates a deploy. Everything else still runs on PRs.
+# env:
+#   RAW_STACK_PR_BROWSER_TESTS: "off"
+
 jobs:
   # Browser tests run inside Playwright's own image, which ships the browsers
   # and the system libraries they need, so CI installs nothing for them. Its
   # tag must match the project's Playwright version, read here from the
-  # lockfile. Without playwright.config.ts the image is empty and verify runs
-  # on the plain runner.
+  # lockfile. Without playwright.config.ts, or on a PR with browser tests off,
+  # the image is empty and verify runs on the plain runner.
   browsers:
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -35,6 +41,7 @@ jobs:
       - id: image
         run: |
           [ -f playwright.config.ts ] || exit 0
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] && [ "${RAW_STACK_PR_BROWSER_TESTS:-}" = off ]; then exit 0; fi
           version=$(grep -oE "^  '?@playwright/test@[0-9][^':(]*" pnpm-lock.yaml | head -1 | sed 's/.*@//')
           if [ -z "$version" ]; then
             echo "::error::playwright.config.ts exists but pnpm-lock.yaml has no @playwright/test."
