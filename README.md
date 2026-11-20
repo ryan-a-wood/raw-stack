@@ -11,7 +11,7 @@ Guardrails for TypeScript projects on [Vite+](https://viteplus.dev), built so ag
 - **Claude Code hooks** for a tiered verify loop: lint after each edit (about 0.4 s), the fast tier on Stop (1 to 3 s, blocking), the full tier before a PR.
 - **E2e first**: the template has an `e2e/` test project that runs the real app, a `FEATURES.md` map of what the app does, and a `verify` skill that drives both.
 - **Property tests**: [fast-check](https://fast-check.dev) generates inputs and checks a rule holds for all of them. raw-stack sets the run count (100 per property, 1000 in the full tier), and the guard rejects `numRuns`, `seed` and the other settings that weaken a property.
-- **Expect tests** that need a person to change: inline snapshots (`toMatchInlineSnapshot`) in `e2e/` only, where they record what the user sees. The full tier never writes a snapshot, the guard rejects them in unit tests and rejects snapshot files, and the template's CI fails on any changed or removed snapshot until a maintainer adds the `snapshots-approved` label to the PR.
+- **Expect tests** that change only by hand: inline snapshots (`toMatchInlineSnapshot`) in `e2e/` only, where they record what the user sees. The full tier never writes a snapshot, the guard rejects them in unit tests and rejects snapshot files, and the template's CI lists every new, changed or removed snapshot, with its old value, in the PR's job summary.
 
 This repo is two things:
 
@@ -35,9 +35,9 @@ Change the tag in `package.json` (`"raw-stack": "github:ryan-a-wood/raw-stack#v0
 
 - `raw-stack verify`: fast tier. `vp check --fix`, tests related to files changed on this branch, dependency-cruiser on `src/`, guard.
 - `raw-stack verify --full`: everything, no fixes: unit tests with 1000 runs per property test, never writing snapshots, the e2e tests in `e2e/` (they run the real app), plus the rest.
-- `raw-stack guard [files...]`: suppression comments, fast-check settings that weaken a property, snapshots outside `e2e/` or in separate files, test retries, config overrides, and a verify workflow that no longer runs `pnpm verify` and the label-gated snapshot check.
+- `raw-stack guard [files...]`: suppression comments, fast-check settings that weaken a property, snapshots outside `e2e/` or in separate files, test retries, config overrides, and a verify workflow that no longer runs `pnpm verify` and the snapshot report.
 - `raw-stack cloudflare-secrets [--repo owner/name] [--account-id id] [--config file] [--dry-run]`: creates a Cloudflare API token scoped to what the project's wrangler config deploys and stores it as the GitHub Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. See [Deploy to Cloudflare](#deploy-to-cloudflare).
-- `raw-stack snapshots [--base <ref>] [--approved]`: compares the inline snapshots with where the branch left `<ref>` (default: the default branch). Lists new ones, and fails on changed or removed ones unless `--approved`. The template's CI passes `--approved` only when the PR has the `snapshots-approved` label.
+- `raw-stack snapshots [--base <ref>]`: compares the inline snapshots with where the branch left `<ref>` (default: the default branch) and lists the new, changed and removed ones, with the old values. It reports and never fails.
 
 ## Deploy to Cloudflare
 

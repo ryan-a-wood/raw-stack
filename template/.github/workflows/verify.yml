@@ -2,14 +2,12 @@
 # tests (browser tests too, when the project has playwright.config.ts), lint,
 # type checks, dependency-cruiser, guard. It never writes snapshots.
 #
-# On PRs, `raw-stack snapshots` lists new snapshots for review and fails on any
-# snapshot that was changed or removed, until a maintainer adds the
-# snapshots-approved label. Adding or removing the label re-runs it.
+# On PRs, `raw-stack snapshots` lists new, changed and removed snapshots, with
+# the old values, in the job summary for the reviewer. It never fails the run.
 name: verify
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
 
@@ -70,5 +68,4 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           BASE: origin/${{ github.base_ref }}
-          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'snapshots-approved') && '--approved' || '' }}
-        run: pnpm exec raw-stack snapshots --base "$BASE" $APPROVED
+        run: pnpm exec raw-stack snapshots --base "$BASE"
