@@ -50,7 +50,7 @@ When the app gets a web UI (a site or PWA), its e2e tests drive a browser with [
    });
    ```
 
-3. Name browser tests `e2e/<feature>.spec.ts`. Vitest runs `e2e/**/*.test.ts` and Playwright runs `*.spec.ts`, so they don't overlap. `pnpm verify` and CI run both. CI runs them inside Playwright's Docker image, which matches your Playwright version and has the browsers preinstalled.
+3. Name browser tests `e2e/<feature>.spec.ts`. Vitest runs `e2e/**/*.test.ts` and Playwright runs `*.spec.ts`, so they don't overlap. `pnpm verify` and CI run both. CI runs them inside Playwright's Docker image, which matches your Playwright version and has the browsers preinstalled. A project with one developer can skip them on PRs and leave them to the push to main by uncommenting `RAW_STACK_PR_BROWSER_TESTS: "off"` in `.github/workflows/verify.yml`.
 
 `rawStackPlaywright()` sets what keeps the suite fast and honest, and the guard fails if `playwright.config.ts` changes it: tests run in parallel, even within a file (`fullyParallel`); only Chromium runs locally, and Chromium and WebKit run in CI (never Firefox); a trace is kept only for a failed test; no retries; `.only` fails in CI. `projects` and `use` can be extended, for example with a login setup project.
 
