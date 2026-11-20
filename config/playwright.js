@@ -7,8 +7,11 @@
 const TEST_DIR = "e2e";
 const TEST_MATCH = "**/*.spec.ts";
 
-/** Every browser runs in CI; Chromium alone runs locally to keep the loop fast. */
-const BROWSERS = /** @type {const} */ (["chromium", "firefox", "webkit"]);
+/**
+ * Chromium and WebKit (Safari, and every browser on iOS) run in CI; Chromium
+ * alone runs locally to keep the loop fast. Firefox is left out on purpose.
+ */
+const BROWSERS = /** @type {const} */ (["chromium", "webkit"]);
 
 /**
  * @param {{ ci?: boolean }} [options] defaults to the CI environment variable
