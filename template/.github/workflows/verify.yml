@@ -14,17 +14,20 @@ on:
 permissions:
   contents: read
 
-# For a project with one developer who merges each PR once it's green: uncomment
-# to skip the Playwright browser tests on PRs and run them only on the push to
-# main, which still gates a deploy. Everything else still runs on PRs.
+# Browser tests run on PRs and on the push to main. For a project with one
+# developer who merges each PR once it's green, uncomment one line to run them
+# on only one: PR_ off leaves them to the push to main (fast PRs); MAIN_ off
+# leaves them to PRs (the merge was tested on its PR, so main deploys sooner).
+# Everything else always runs.
 # env:
 #   RAW_STACK_PR_BROWSER_TESTS: "off"
+#   RAW_STACK_MAIN_BROWSER_TESTS: "off"
 
 jobs:
   # Browser tests run inside Playwright's own image, which ships the browsers
   # and the system libraries they need, so CI installs nothing for them. Its
   # tag must match the project's Playwright version, read here from the
-  # lockfile. Without playwright.config.ts, or on a PR with browser tests off,
+  # lockfile. Without playwright.config.ts, or on a run with browser tests off,
   # the image is empty and verify runs on the plain runner.
   browsers:
     runs-on: ubuntu-latest
@@ -42,6 +45,7 @@ jobs:
         run: |
           [ -f playwright.config.ts ] || exit 0
           if [ "$GITHUB_EVENT_NAME" = pull_request ] && [ "${RAW_STACK_PR_BROWSER_TESTS:-}" = off ]; then exit 0; fi
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "${RAW_STACK_MAIN_BROWSER_TESTS:-}" = off ]; then exit 0; fi
           version=$(grep -oE "^  '?@playwright/test@[0-9][^':(]*" pnpm-lock.yaml | head -1 | sed 's/.*@//')
           if [ -z "$version" ]; then
             echo "::error::playwright.config.ts exists but pnpm-lock.yaml has no @playwright/test."
