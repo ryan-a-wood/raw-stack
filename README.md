@@ -9,8 +9,8 @@ Guardrails for TypeScript projects on [Vite+](https://viteplus.dev), built so ag
 - **Guard**: no suppression comments, and project config can't loosen the shared rules. It loads `vite.config.ts` and checks the resolved test settings, so a project can't drop the unit or e2e test projects or narrow which tests they run.
 - **Browser tests** (opt-in): `raw-stack/playwright` exports `rawStackPlaywright()` for `playwright.config.ts`: fully parallel, Chromium only locally, Chromium and WebKit in CI (inside Playwright's image, so nothing installs), traces kept on failure, no retries, and native `PW_SHARD` (`"<current>/<total>"`, e.g. `"2/4"`) sharding support. The guard rejects `waitForTimeout`, `waitForSelector` and CSS or XPath selectors, and `verify --full` runs the non-browser checks first and `playwright test` afterward when the config exists. For larger suites, split CI into `raw-stack verify --checks` and sharded `raw-stack verify --browser` jobs. A project with one developer can run browser tests on only one kind of CI run (both commented out in the template): `RAW_STACK_PR_BROWSER_TESTS: "off"` skips them on PRs and leaves them to the push to main; `RAW_STACK_MAIN_BROWSER_TESTS: "off"` skips them on the push to main, whose merge its PR already tested, so it deploys sooner. Local runs always run them.
 - **Zero test retries**: a flaky test gets its cause fixed, or is deleted if it no longer states a requirement. The guard rejects `retry` in the config and on test tags, `{ retry }` or Playwright `retries` in test files, `--retry`/`--retries` in package.json scripts and CI workflows, and `vitest.config.*` files, which Vitest reads instead of `vite.config.ts`.
-- **Claude Code hooks** for a tiered verify loop: lint after each edit (about 0.4 s), the fast tier on Stop (1 to 3 s, blocking), the full tier before a PR.
-- **E2e first**: the template has an `e2e/` test project that runs the real app, a `FEATURES.md` map of what the app does, and a `verify` skill that drives both.
+- **Claude Code hooks** for a tiered verify loop: lint after each edit (about 0.4 s), the fast tier on Stop (1 to 3 s, blocking), the full tier before a PR. Harnesses other than Claude Code can run `pnpm exec raw-stack verify` directly for the same fast loop.
+- **E2e first**: the template has an `e2e/` test project that runs the real app, a `FEATURES.md` map of what the app does (which scales into `features/<name>.md` with `FEATURES.md` as an index), and a `verify` skill that drives both.
 - **Property tests**: [fast-check](https://fast-check.dev) generates inputs and checks a rule holds for all of them. raw-stack sets the run count (100 per property, 1000 in the full tier), and the guard rejects `numRuns`, `seed` and the other settings that weaken a property.
 - **Expect tests** that change only by hand: inline snapshots (`toMatchInlineSnapshot`) in `e2e/` only, where they record what the user sees. The full tier never writes a snapshot, the guard rejects them in unit tests and rejects snapshot files, and the template's CI lists every new, changed or removed snapshot, with its old value, in the PR's job summary.
 
@@ -34,7 +34,7 @@ Change the tag in `package.json` (`"raw-stack": "github:ryan-a-wood/raw-stack#v0
 
 ## CLI
 
-- `raw-stack verify`: fast tier. `vp check --fix`, tests related to files changed on this branch, dependency-cruiser on `src/`, guard.
+- `raw-stack verify`: fast tier. `vp check --fix`, `--project unit` tests related to files changed on this branch, dependency-cruiser on `src/`, guard. Runs automatically on Claude Code Stop, or directly via `pnpm exec raw-stack verify` from other harnesses.
 - `raw-stack verify --full`: everything, no fixes: runs `--checks` in parallel first (unit tests with 1000 runs per property test, never writing snapshots, the e2e tests in `e2e/`, `vp check`, dependency-cruiser, guard) and Playwright browser tests afterward so Playwright does not compete for CPU/RAM.
 - `raw-stack verify --checks`: full non-browser tier (`vp check`, unit tests at 1000 property runs, Vitest `e2e` with `--update=none`, dependency-cruiser, guard). Skips Playwright.
 - `raw-stack verify --browser`: Playwright browser tests only (respects `RAW_STACK_PR_BROWSER_TESTS` / `RAW_STACK_MAIN_BROWSER_TESTS`; succeeds cleanly with a skip message when `playwright.config.ts` does not exist).
@@ -126,6 +126,16 @@ Default warning thresholds:
 - **Index exports**: `> 25` (`index-exports`)
 - **Sibling fan-out**: `> 50%` when there are at least 2 sibling modules (`sibling-fan-out`)
 - **Unused index exports**: any export not imported anywhere (`unused-exports`)
+
+## Scaling guidance
+
+`template/AGENTS.md` codifies the conventions for keeping a raw-stack repo clean as it grows:
+
+- **Vertical feature slices**: keep `src/modules/` flat and the web/app shell thin (auth, layout, HTTP helpers, route registry) so each feature owns its domain, routes, pages, styles, and client islands (enforced with `clientBoundary`). Split a module into cohesive sibling modules — or `deepSubmodules` — before ~15–20 prod files or ~25 `index.ts` exports, using `pnpm exec raw-stack health` to watch size, fan-out, and unused exports.
+- **Property tests without bloating `index.ts`**: keep behavioral unit tests going through `index.ts`, and never widen `index.ts` solely for property tests — extract pure algorithms into a small focused module or let white-box `*.property.test.ts` files inside the module import internal helpers directly.
+- **Cohesive file splits**: under `max-lines: 300`, split by concept and keep static stylesheets/assets as `.css` or data files instead of mechanical `-methods.ts`, `-views.tsx`, or CSS-in-TS shards.
+- **Fast-loop behavioral tests for routes & UI**: because the Stop hook (`raw-stack verify`) runs `--project unit` only, pair Playwright e2e tests with fast in-process route/SSR and component unit tests.
+- **Scaling specs & CI**: past ~10–15 features, split feature specs into `features/<name>.md` and keep `FEATURES.md` as an index linking each doc to its `e2e/` test; for larger Playwright suites, split CI into `raw-stack verify --checks` and sharded `raw-stack verify --browser` jobs via `PW_SHARD`.
 
 ## Deploy to Cloudflare
 
