@@ -1,0 +1,104 @@
+# Thin innerloop caller: notifies the central cross-repo dispatcher in
+# ryan-a-wood/innerloop whenever Ryan adds the `innerloop` label (or triggers
+# manually). Repo defaults (machineType, verifyCmd, remoteControl) live in
+# .innerloop.json at the repo root and can be overridden on manual dispatch.
+name: innerloop
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "GitHub issue number to enqueue in innerloop"
+        required: true
+        type: string
+      machine_type:
+        description: "Optional GCE machine type override (blank uses .innerloop.json or e2-standard-4)"
+        required: false
+        type: string
+        default: ""
+      verify_cmd:
+        description: "Optional verify command override"
+        required: false
+        type: string
+        default: ""
+      docker_image:
+        description: "Optional Project Container Image override"
+        required: false
+        type: string
+        default: ""
+      docker_socket:
+        description: "Enable Docker-out-of-Docker (/var/run/docker.sock)"
+        required: false
+        type: boolean
+        default: false
+      boot_disk_size_gb:
+        description: "Optional boot disk size override (GB)"
+        required: false
+        type: string
+        default: ""
+      spot:
+        description: "Use GCE Spot VM pricing"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  issues: write
+
+jobs:
+  enqueue:
+    if: >
+      (github.event_name == 'workflow_dispatch' && github.actor == 'ryan-a-wood') ||
+      (github.event_name == 'issues' && github.event.label.name == 'innerloop' && github.event.sender.login == 'ryan-a-wood')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ensure innerloop label on manual dispatch
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: |
+          if [[ ! "$ISSUE_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Invalid issue number: $ISSUE_NUMBER"
+            exit 1
+          fi
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label innerloop
+
+      - name: Notify central innerloop dispatcher
+        env:
+          GH_TOKEN: ${{ secrets.INNERLOOP_DISPATCH_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+          MACHINE_TYPE: ${{ inputs.machine_type }}
+          VERIFY_CMD: ${{ inputs.verify_cmd }}
+          DOCKER_IMAGE: ${{ inputs.docker_image }}
+          DOCKER_SOCKET: ${{ inputs.docker_socket }}
+          BOOT_DISK_SIZE_GB: ${{ inputs.boot_disk_size_gb }}
+          SPOT: ${{ inputs.spot }}
+        run: |
+          jq -n \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg issue "$ISSUE_NUMBER" \
+            --arg machine_type "$MACHINE_TYPE" \
+            --arg verify_cmd "$VERIFY_CMD" \
+            --arg docker_image "$DOCKER_IMAGE" \
+            --arg docker_socket "$DOCKER_SOCKET" \
+            --arg boot_disk_size_gb "$BOOT_DISK_SIZE_GB" \
+            --arg spot "$SPOT" \
+            '{
+              event_type: "innerloop-enqueue",
+              client_payload: (
+                {
+                  repo: $repo,
+                  issue_number: ($issue | tonumber)
+                }
+                + (if $machine_type != "" then { machine_type: $machine_type } else {} end)
+                + (if $verify_cmd != "" then { verify_cmd: $verify_cmd } else {} end)
+                + (if $docker_image != "" then { docker_image: $docker_image } else {} end)
+                + (if $docker_socket == "true" then { docker_socket: true } else {} end)
+                + (if $boot_disk_size_gb != "" then { boot_disk_size_gb: ($boot_disk_size_gb | tonumber) } else {} end)
+                + (if $spot == "true" then { spot: true } else {} end)
+              )
+            }' | gh api --method POST repos/ryan-a-wood/innerloop/dispatches --input -
