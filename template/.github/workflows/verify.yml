@@ -80,3 +80,56 @@ jobs:
         env:
           BASE: origin/${{ github.base_ref }}
         run: pnpm exec raw-stack snapshots --base "$BASE"
+
+  # For projects with a larger Playwright suite, you can replace the single
+  # `verify` job above with separate `checks` and sharded `browser` jobs so
+  # checks run on the plain runner while Playwright shards run in parallel
+  # inside Playwright's container (via PW_SHARD, read by rawStackPlaywright()):
+  #
+  # checks:
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 15
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #     - uses: pnpm/action-setup@v4
+  #       with:
+  #         version: 10
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 24
+  #         cache: pnpm
+  #     - run: pnpm install --frozen-lockfile
+  #     - run: pnpm exec raw-stack verify --checks
+  #     - name: snapshots
+  #       if: github.event_name == 'pull_request'
+  #       env:
+  #         BASE: origin/${{ github.base_ref }}
+  #       run: pnpm exec raw-stack snapshots --base "$BASE"
+  #
+  # browser:
+  #   needs: browsers
+  #   if: needs.browsers.outputs.image != ''
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 15
+  #   container:
+  #     image: ${{ needs.browsers.outputs.image }}
+  #     options: --user 1001
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       shard: [1, 2]
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: pnpm/action-setup@v4
+  #       with:
+  #         version: 10
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 24
+  #         cache: pnpm
+  #     - run: pnpm install --frozen-lockfile
+  #     - env:
+  #         PW_SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+  #       run: pnpm exec raw-stack verify --browser
