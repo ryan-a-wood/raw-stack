@@ -1,0 +1,5 @@
+{
+  "machineType": "e2-standard-4",
+  "verifyCmd": "npm install --no-package-lock && npm test && scripts/try-template.sh",
+  "remoteControl": true
+}
