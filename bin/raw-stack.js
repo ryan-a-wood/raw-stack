@@ -2,12 +2,15 @@
 // @ts-check
 // raw-stack verify [--full]   fast tier (changed files) or full tier
 // raw-stack guard [files...]  suppression comments and config overrides
+// raw-stack health [--json] [--strict]
+//                             module health metrics (size, index exports, sibling fan-out)
 // raw-stack snapshots [--base <ref>]
 //                             list snapshots added, changed or removed since the branch left <ref>
 // raw-stack cloudflare-secrets [--repo owner/name] [--account-id id] [--config file] [--dry-run]
 //                             scoped Cloudflare deploy token -> GitHub Actions secrets
 import { cloudflareSecrets, USAGE as CLOUDFLARE_USAGE } from "../lib/cloudflare/deploy-token.js";
 import { guard } from "../lib/guard.js";
+import { analyzeHealth, formatHealthReport } from "../lib/health.js";
 import { findRoot, projectFiles } from "../lib/project.js";
 import { testConfigProblems } from "../lib/test-config.js";
 import { compareSnapshots, snapshotReport } from "../lib/snapshots.js";
@@ -25,6 +28,18 @@ if (command === "verify") {
   const problems = [...guard(root, files), ...(await testConfigProblems(root))];
   if (problems.length > 0) console.error(problems.join("\n"));
   process.exitCode = problems.length > 0 ? 1 : 0;
+} else if (command === "health") {
+  const unknown = args.filter((a) => a !== "--json" && a !== "--strict");
+  if (unknown.length > 0) {
+    console.error(`raw-stack health: unknown option(s): ${unknown.join(", ")}\nusage: raw-stack health [--json] [--strict]`);
+    process.exitCode = 2;
+  } else {
+    const json = args.includes("--json");
+    const strict = args.includes("--strict");
+    const result = analyzeHealth(root);
+    console.log(json ? JSON.stringify(result, null, 2) : formatHealthReport(result));
+    process.exitCode = strict && !result.ok ? 1 : 0;
+  }
 } else if (command === "snapshots") {
   const at = args.indexOf("--base");
   const base = at === -1 ? undefined : args[at + 1];
@@ -43,7 +58,7 @@ if (command === "verify") {
   });
 } else {
   console.error(
-    `usage: raw-stack verify [--full] | raw-stack guard [files...] | raw-stack snapshots [--base <ref>]\n${CLOUDFLARE_USAGE}`,
+    `usage: raw-stack verify [--full] | raw-stack guard [files...] | raw-stack health [--json] [--strict] | raw-stack snapshots [--base <ref>]\n${CLOUDFLARE_USAGE}`,
   );
   process.exitCode = 2;
 }

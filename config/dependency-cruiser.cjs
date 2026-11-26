@@ -3,6 +3,8 @@
 // extends this file: `extends: require.resolve("raw-stack/dependency-cruiser")`.
 
 const TEST = "\\.test\\.tsx?$";
+const TESTING = "^src/testing/";
+const ENTRY = "^src/(main|browser)\\.tsx?$";
 const MODULE_INTERNAL = "^src/modules/[^/]+/.";
 const MODULE_ENTRY = "^src/modules/[^/]+/index\\.tsx?$";
 
@@ -34,13 +36,15 @@ module.exports = {
     },
     {
       name: "no-orphans",
-      comment: "Files nothing imports are dead code. Delete them or import them.",
+      comment:
+        "Production files must be reachable from an entrypoint (src/main.ts(x) or src/browser.ts(x)). Delete dead code or import it.",
       severity: "error",
-      from: {
-        orphan: true,
-        pathNot: [TEST, "\\.d\\.ts$", "^src/main\\.tsx?$"],
+      from: { path: ENTRY },
+      to: {
+        path: "^src/",
+        pathNot: [TEST, "\\.d\\.ts$", TESTING, ENTRY],
+        reachable: false,
       },
-      to: {},
     },
     {
       name: "not-to-unresolvable",
@@ -60,7 +64,7 @@ module.exports = {
       name: "not-to-dev-dep",
       comment: "Shipped code can't import devDependencies. Move the package to dependencies.",
       severity: "error",
-      from: { path: "^src/", pathNot: TEST },
+      from: { path: "^src/", pathNot: [TEST, TESTING] },
       to: {
         dependencyTypes: ["npm-dev"],
         dependencyTypesNot: ["type-only"],
@@ -73,6 +77,14 @@ module.exports = {
       severity: "error",
       from: { pathNot: TEST },
       to: { path: TEST },
+    },
+    {
+      name: "not-to-testing",
+      comment:
+        "Shipped code can't import src/testing/. Only tests and files inside src/testing/ may import it.",
+      severity: "error",
+      from: { pathNot: [TEST, TESTING] },
+      to: { path: TESTING },
     },
   ],
   options: {
