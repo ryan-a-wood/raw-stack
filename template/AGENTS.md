@@ -6,26 +6,29 @@ A TypeScript project on [raw-stack](https://github.com/ryan-a-wood/raw-stack): V
 
 - `vp check`: format (Oxfmt), lint (Oxlint, type-aware) and type check. `vp check --fix` fixes formatting and fixable lint.
 - `vp test`: run the tests (Vitest). Import test APIs from `vite-plus/test`. `vp test --project unit` or `--project e2e` runs one kind.
-- `pnpm verify`: the full verify tier, e2e tests included. Run it before opening a PR.
+- `pnpm exec raw-stack verify`: the fast verify tier (`vp check --fix`, related unit tests, dependency-cruiser, guard). The Claude Code Stop hook runs this automatically; run it directly from other harnesses.
+- `pnpm verify`: the full verify tier (`raw-stack verify --full`), e2e and browser tests included. Run it before opening a PR. Use `pnpm exec raw-stack verify --checks` or `--browser` to run the non-browser checks or Playwright browser tests on their own.
+- `pnpm exec raw-stack health`: per-module production file count, LOC, `index.ts` export usage (prod, test-only, unused), and sibling fan-out (`--strict` exits 1 on warnings; `--json` prints JSON).
 - `node src/main.ts`: run the app. Node runs the TypeScript directly.
 
 ## Code layout: deep modules
 
-- Features live in `src/modules/<name>/`. A module's `index.ts` is its whole interface. Every other file in the folder is private to it.
-- Import another module only through its `index.ts`. dependency-cruiser fails the check otherwise.
-- Aim for few modules with small interfaces that hide a lot. Test a module through its `index.ts`, with the test file inside the module folder.
-- `src/main.ts` is the entry point. Files nothing imports fail the check, so delete dead code.
+- **Vertical feature slices over horizontal buckets.** Keep `src/modules/` flat, keep the web/app shell thin (auth, layout, HTTP helpers, route registry), and let each feature module own its domain, routes, pages, styles, and client islands. A module's `index.ts` is its whole interface; every other file in the folder is private to it.
+- **Strict module boundaries.** Import another module only through its `index.ts`; dependency-cruiser fails otherwise. For browser islands, enforce the client/server boundary in `.dependency-cruiser.cjs` with `clientBoundary` from `raw-stack/dependency-cruiser-rules` (default client pattern: `*.client.ts(x)`, `.../client/...`, and `src/browser.ts(x)`).
+- **Split modules before they bloat.** Aim for cohesive modules with small interfaces. Split a growing module into sibling modules — or into encapsulated submodules enforced by `deepSubmodules` from `raw-stack/dependency-cruiser-rules` — before it passes ~15–20 production files or ~25 `index.ts` exports. Run `pnpm exec raw-stack health` to inspect module size, sibling fan-out, and test-only or unused exports.
+- **Split files by concept, not mechanically.** Under `max-lines: 300`, split along cohesive responsibilities and keep static stylesheets and assets as `.css` or data files — never mechanical `-methods.ts`, `-views.tsx`, or CSS-in-TS shards.
+- `src/main.ts` (and `src/browser.ts(x)` for browser bundles) is the entry point. Unreachable production files fail the check, so delete dead code.
 - Imports use the `.ts` extension: `import { greet } from "./modules/greeting/index.ts"`.
 
 ## Tests
 
-- **E2e tests come first.** `e2e/` holds tests that run the real app and check what the user sees, one per feature in `FEATURES.md`. They are the hardest tests to fool: the feature either works or it doesn't. A new feature gets its `FEATURES.md` entry and its e2e test in the same change.
-- **Property tests** come next. A property test states a rule that holds for every input, and [fast-check](https://fast-check.dev) tries many generated inputs to break it, then shrinks a failure to the smallest case. Write one for any module with logic over a wide input space: parsing, formatting, math, state transitions, anything with a round trip (`decode(encode(x))` equals `x`). They are unit tests, named `<name>.property.test.ts` next to the module. See `src/modules/greeting/greeting.property.test.ts`.
+- **E2e tests come first.** `e2e/` holds tests that run the real app and check what the user sees, one per feature in `FEATURES.md`. They are the hardest tests to fool: the feature either works or it doesn't. A new feature gets its `FEATURES.md` entry and its e2e test in the same change. Once the app grows past ~10–15 features, split individual specs into `features/<name>.md` and keep `FEATURES.md` as a short index linking each feature doc to its `e2e/` test.
+- **Property tests** come next. A property test states a rule that holds for every input, and [fast-check](https://fast-check.dev) tries many generated inputs to break it, then shrinks a failure to the smallest case. Write one for any module with logic over a wide input space: parsing, formatting, math, state transitions, anything with a round trip (`decode(encode(x))` equals `x`). They are unit tests, named `<name>.property.test.ts` next to the module. See `src/modules/greeting/greeting.property.test.ts`. Don't widen a module's public `index.ts` solely to expose internal helpers for property tests: either extract pure algorithms into a small focused module or let white-box `*.property.test.ts` files inside the module import pure internal helpers directly.
 - raw-stack sets how many inputs each property tries: 100 in the fast tier, 1000 in `pnpm verify`. Don't set `numRuns`, `seed`, `path` or time limits: the guard fails on them. When a property fails, fix the code, or the property if the rule was wrong. You can replay the reported seed while debugging, then remove it.
 - **Expect tests** (inline snapshots) record what the app printed and fail when it changes. Use them in `e2e/` for output that's tedious to write by hand: CLI output, rendered pages, error text, API responses. Write `expect(output).toMatchInlineSnapshot()` empty, run `vp test --project e2e` to fill it in, then read what it recorded and check it against `FEATURES.md`: whatever it recorded becomes the expected output. Only inline snapshots, only in `e2e/`: the guard rejects them in unit tests, where they would only copy the code, and rejects snapshot files.
 - **Don't change a recorded snapshot yourself** unless the output is meant to change. If it is, update it and say why in the PR: CI lists every changed or removed snapshot with its old value in the job summary, and the reviewer reads it in the diff. `pnpm verify` never writes snapshots, so an empty one fails there.
-- **Unit tests** live next to the code in `src/modules/<name>/` and test a module through its `index.ts`. Use examples for the cases a property can't express.
-- E2e tests don't import from `src/`, so the Stop hook doesn't run them. `pnpm verify` and CI do. For a UI, e2e tests drive a browser: see Browser tests below.
+- **Unit tests** live next to the code in `src/modules/<name>/` and test a module's behavior through its `index.ts`. Use examples for the cases a property can't express.
+- **Fast-loop behavioral tests for routes and UI.** E2e tests don't import from `src/`, and the Stop hook runs `--project unit` only (`vp test related --project unit`), so `pnpm verify` and CI run e2e and browser tests. Pair Playwright e2e tests with fast in-process route/SSR and component unit tests so UI and route edits get behavioral feedback on Stop. For browser e2e setup, see Browser tests below.
 - **Zero retries.** A test that passes only on a second try is hiding a bug in the code or in the test. When a test is flaky, fix the cause right away: a race, shared state between tests, a missing `await`, a fixed port, real time or randomness the test doesn't control. If the test no longer states a requirement in `FEATURES.md`, delete it and say why in the PR. The guard rejects every way to retry: `retry` in `vite.config.ts` or on a test tag, `{ retry }` on a test or `describe`, Playwright `retries`, `--retry` or `--retries` in a script or workflow, and a `vitest.config.*` file, which Vitest would read instead of `vite.config.ts`.
 
 ## Browser tests (Playwright)
@@ -73,15 +76,17 @@ The rules are strict on purpose. Fix the cause; don't work around a rule.
 
 ## The verify loop
 
-Hooks in `.claude/settings.json` run the fast tiers for you:
+Hooks in `.claude/settings.json` run the fast tiers for you in Claude Code:
 
 | When            | What runs                                                                                                                                                                            | Time        |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- |
 | After each edit | Lint the edited file, check it for suppression comments and fast-check settings                                                                                                      | about 0.4 s |
-| When you stop   | `vp check --fix`, tests related to changed files (properties at 100 runs), dependency-cruiser, config guard. Blocks until it passes. Skipped if nothing changed since the last pass. | 1 to 3 s    |
-| Before a PR     | The `verify` skill: `pnpm verify` (everything: unit, property at 1000 runs, e2e), then run the app and check each feature you touched against `FEATURES.md`                          | longer      |
+| When you stop   | `vp check --fix`, related `--project unit` tests (properties at 100 runs), dependency-cruiser, config guard. Blocks until it passes. Skipped if nothing changed since the last pass. | 1 to 3 s    |
+| Before a PR     | The `verify` skill: `pnpm verify` (everything: unit, property at 1000 runs, e2e, browser), then run the app and check each feature you touched against `FEATURES.md`                 | longer      |
 
-CI (`.github/workflows/verify.yml`) runs `pnpm verify` on every PR and push to `main`, and on PRs `raw-stack snapshots`: it lists new, changed and removed snapshots, with the old values, for review.
+In other agent harnesses (without Claude Code hooks), run `pnpm exec raw-stack verify` directly after edits for the same fast loop, `pnpm verify` (or `pnpm exec raw-stack verify --checks` and `--browser`) before opening a PR, and `pnpm exec raw-stack health` to check module size and boundaries.
+
+CI (`.github/workflows/verify.yml`) runs `pnpm verify` on every PR and push to `main` (or split `raw-stack verify --checks` and sharded `raw-stack verify --browser` jobs using `PW_SHARD` for larger Playwright suites), and on PRs `raw-stack snapshots`: it lists new, changed and removed snapshots, with the old values, for review.
 
 If the Stop hook blocks, fix what it reports. If it reports the same failure and you've changed nothing, it lets you stop: say what's still failing.
 
