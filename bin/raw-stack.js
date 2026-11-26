@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
-// raw-stack verify [--full]   fast tier (changed files) or full tier
+// raw-stack verify [--full | --checks | --browser]
+//                             fast tier (changed files), full tier, non-browser checks, or browser tests only
 // raw-stack guard [files...]  suppression comments and config overrides
 // raw-stack health [--json] [--strict]
 //                             module health metrics (size, index exports, sibling fan-out)
@@ -14,15 +15,35 @@ import { analyzeHealth, formatHealthReport } from "../lib/health.js";
 import { findRoot, projectFiles } from "../lib/project.js";
 import { testConfigProblems } from "../lib/test-config.js";
 import { compareSnapshots, snapshotReport } from "../lib/snapshots.js";
-import { report, verifyChanged, verifyFull } from "../lib/verify.js";
+import { report, verifyBrowser, verifyChanged, verifyChecks, verifyFull } from "../lib/verify.js";
+
+const VERIFY_MODES = new Set(["--full", "--checks", "--browser"]);
+const VERIFY_USAGE = "usage: raw-stack verify [--full | --checks | --browser]";
 
 const [command, ...args] = process.argv.slice(2);
 const root = findRoot(process.cwd());
 
 if (command === "verify") {
-  const steps = await (args.includes("--full") ? verifyFull(root) : verifyChanged(root));
-  console.log(report(steps));
-  process.exitCode = steps.every((s) => s.ok) ? 0 : 1;
+  const unknown = args.filter((a) => !VERIFY_MODES.has(a));
+  const modes = [...new Set(args)];
+  if (unknown.length > 0) {
+    console.error(`raw-stack verify: unknown option(s): ${unknown.join(", ")}\n${VERIFY_USAGE}`);
+    process.exitCode = 2;
+  } else if (modes.length > 1) {
+    console.error(`raw-stack verify: conflicting options: ${modes.join(", ")}\n${VERIFY_USAGE}`);
+    process.exitCode = 2;
+  } else {
+    const mode = modes[0];
+    const steps = await (mode === "--full"
+      ? verifyFull(root)
+      : mode === "--checks"
+        ? verifyChecks(root)
+        : mode === "--browser"
+          ? verifyBrowser(root)
+          : verifyChanged(root));
+    console.log(report(steps));
+    process.exitCode = steps.every((s) => s.ok) ? 0 : 1;
+  }
 } else if (command === "guard") {
   const files = args.length > 0 ? args.map((f) => (f.startsWith(root) ? f.slice(root.length + 1) : f)) : projectFiles(root);
   const problems = [...guard(root, files), ...(await testConfigProblems(root))];
@@ -58,7 +79,7 @@ if (command === "verify") {
   });
 } else {
   console.error(
-    `usage: raw-stack verify [--full] | raw-stack guard [files...] | raw-stack health [--json] [--strict] | raw-stack snapshots [--base <ref>]\n${CLOUDFLARE_USAGE}`,
+    `usage: raw-stack verify [--full | --checks | --browser] | raw-stack guard [files...] | raw-stack health [--json] [--strict] | raw-stack snapshots [--base <ref>]\n${CLOUDFLARE_USAGE}`,
   );
   process.exitCode = 2;
 }
