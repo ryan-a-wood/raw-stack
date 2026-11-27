@@ -1,6 +1,6 @@
 import type { IForbiddenRuleType } from "dependency-cruiser";
 
-/** Default regex identifying client-side code: `*.client.ts(x)`, `.../client/...`, and `src/browser.ts(x)`. */
+/** Default regex identifying client-side code: `*.client.ts(x)`, `.../client/...`, `src/browser.ts(x)`, and `src/modules/<mod>(/<submod>)?/client.ts(x)`. */
 export declare const DEFAULT_CLIENT_PATTERN: string;
 
 export interface ClientBoundaryOptions {
@@ -35,7 +35,9 @@ export interface DeepSubmodulesOptions {
 export declare function clientBoundary(options: ClientBoundaryOptions): IForbiddenRuleType[];
 
 /**
- * Build dependency-cruiser rules enforcing `src/modules/<mod>/<submod>/index.ts(x)` encapsulation.
+ * Build dependency-cruiser rules enforcing `src/modules/<mod>/<submod>/index.ts(x)` or `client.ts(x)` encapsulation.
+ * Note: `raw-stack/dependency-cruiser` enforces 1-level submodule encapsulation automatically for all modules;
+ * this helper remains exported for compatibility.
  * Spread the returned array into `forbidden` in `.dependency-cruiser.cjs`.
  */
 export declare function deepSubmodules(options?: DeepSubmodulesOptions): IForbiddenRuleType[];

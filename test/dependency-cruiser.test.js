@@ -356,7 +356,7 @@ module.exports = {
 };
 `;
 
-    // Valid: parent root and sibling submodule import via submodule index.ts; unconfigured module "other" is unaffected
+    // Valid: parent root and sibling submodule import via submodule index.ts or client.ts
     withProject(
       {
         "src/main.ts": 'import { read } from "./modules/reading/index.ts";\nimport { other } from "./modules/other/index.ts";\nconsole.log(read(), other());\n',
@@ -365,8 +365,8 @@ module.exports = {
         "src/modules/reading/parser/index.ts": 'import { tokenize } from "./tokenize.ts";\nexport const parse = (s: string) => tokenize(s);\n',
         "src/modules/reading/parser/tokenize.ts": "export const tokenize = (s: string) => s;\n",
         "src/modules/reading/render/index.ts": 'import { parse } from "../parser/index.ts";\nexport const render = (s: string) => parse(s);\n',
-        "src/modules/other/index.ts": 'import { detail } from "./sub/detail.ts";\nexport const other = () => detail();\n',
-        "src/modules/other/sub/detail.ts": "export const detail = () => 1;\n",
+        "src/modules/other/index.ts": 'import { detail } from "./sub/index.ts";\nexport const other = () => detail();\n',
+        "src/modules/other/sub/index.ts": "export const detail = () => 1;\n",
       },
       (root) => {
         const summary = runDepcruise(root);
@@ -432,5 +432,223 @@ module.exports = {
       },
       config,
     );
+  });
+});
+
+describe("shared dependency-cruiser rules: client.ts(x) entrypoint and zero-config client-no-node / client-no-server", () => {
+  test("allows external callers to import a module via client.ts(x) or index.ts(x), allows pure/isomorphic modules, and excludes type-only node:* imports", () => {
+    withProject(
+      {
+        "src/main.ts": 'import { load } from "./modules/reading/index.ts";\nconsole.log(load());\n',
+        "src/browser.tsx":
+          'import { Reader } from "./modules/reading/client.tsx";\nimport { Button } from "./modules/ui/index.tsx";\nconsole.log(Reader(), Button());\n',
+        "src/modules/reading/index.ts": 'import { query } from "../database/index.ts";\nexport const load = () => query();\n',
+        "src/modules/reading/client.tsx":
+          'import type { PathLike } from "node:fs";\nimport { Button } from "../ui/index.tsx";\nimport { Widget } from "./widget.client.tsx";\nexport type ClientPath = PathLike;\nexport const Reader = () => [Button(), Widget()];\n',
+        "src/modules/reading/widget.client.tsx":
+          'import { Button } from "../ui/index.tsx";\nexport const Widget = () => Button();\n',
+        "src/modules/reading/widget.client.test.ts":
+          'import { query } from "../database/index.ts";\nconsole.log(query());\n',
+        "src/modules/ui/index.tsx":
+          'import type { Readable } from "node:stream";\nimport { label } from "./label.ts";\nexport type UiStream = Readable;\nexport const Button = () => label();\n',
+        "src/modules/ui/label.ts": 'export const label = () => "ok";\n',
+        "src/modules/database/index.ts": 'import { readFileSync } from "node:fs";\nexport const query = () => readFileSync(".", "utf8");\n',
+      },
+      (root) => {
+        const summary = runDepcruise(root);
+        assert.deepEqual(summary.violations, []);
+      },
+    );
+  });
+
+  test("forbids client.ts, *.client.tsx, and src/browser.tsx from importing node:fs directly or reaching database / *.server.ts transitively", () => {
+    withProject(
+      {
+        "src/main.ts": 'import { ok } from "./modules/database/index.ts";\nconsole.log(ok());\n',
+        "src/browser.tsx":
+          'import { a } from "./modules/featA/client.ts";\nimport { b } from "./modules/featB/client.tsx";\nimport { c } from "./modules/featC/index.ts";\nconsole.log(a(), b(), c());\n',
+        "src/modules/database/index.ts": "export const ok = () => 1;\n",
+        "src/modules/bridgeDb/index.ts": 'import { ok } from "../database/index.ts";\nexport const fromDb = () => ok();\n',
+        "src/modules/bridgeServer/index.ts": 'import { secret } from "./secret.server.ts";\nexport const getSecret = () => secret();\n',
+        "src/modules/bridgeServer/secret.server.ts": 'export const secret = () => "s";\n',
+        "src/modules/featA/client.ts": 'import { fromDb } from "../bridgeDb/index.ts";\nexport const a = () => fromDb();\n',
+        "src/modules/featB/client.tsx": 'import { existsSync } from "node:fs";\nexport const b = () => existsSync(".");\n',
+        "src/modules/featC/index.ts": 'export { c } from "./view.client.tsx";\n',
+        "src/modules/featC/view.client.tsx": 'import { getSecret } from "../bridgeServer/index.ts";\nexport const c = () => getSecret();\n',
+      },
+      (root) => {
+        const summary = runDepcruise(root);
+        const serverHits = summary.violations.filter((v) => v.rule.name === "client-no-server");
+        const nodeHits = summary.violations.filter((v) => v.rule.name === "client-no-node");
+        assert.ok(
+          serverHits.some((v) => v.from === "src/modules/featA/client.ts" && v.to === "src/modules/database/index.ts"),
+          `expected transitive client-no-server violation to database, got: ${JSON.stringify(serverHits)}`,
+        );
+        assert.ok(
+          nodeHits.some((v) => v.from === "src/modules/featB/client.tsx" && /^(?:node:)?fs$/.test(v.to)),
+          `expected direct client-no-node violation to node:fs, got: ${JSON.stringify(nodeHits)}`,
+        );
+        assert.ok(
+          serverHits.some((v) => v.from === "src/modules/featC/view.client.tsx" && v.to === "src/modules/bridgeServer/secret.server.ts"),
+          `expected transitive client-no-server violation to *.server.ts, got: ${JSON.stringify(serverHits)}`,
+        );
+      },
+    );
+  });
+
+  test("forbids submodule client.ts from reaching /server/ and forbids external callers from bypassing index/client", () => {
+    withProject(
+      {
+        "src/main.ts": 'import { leak } from "./modules/a/internal.ts";\nconsole.log(leak());\n',
+        "src/browser.tsx": 'import { run } from "./modules/a/client.ts";\nconsole.log(run());\n',
+        "src/modules/a/internal.ts": "export const leak = () => 1;\n",
+        "src/modules/a/client.ts": 'import { sub } from "./sub/client.ts";\nexport const run = () => sub();\n',
+        "src/modules/a/sub/client.ts": 'import { boot } from "../../boot/server/index.ts";\nexport const sub = () => boot();\n',
+        "src/modules/boot/server/index.ts": "export const boot = () => 2;\n",
+      },
+      (root) => {
+        const summary = runDepcruise(root);
+        assert.ok(
+          summary.violations.some((v) => v.rule.name === "deep-modules-from-outside" && v.to === "src/modules/a/internal.ts"),
+          `expected deep-modules-from-outside on internal.ts, got: ${JSON.stringify(summary.violations)}`,
+        );
+        assert.ok(
+          summary.violations.some((v) => v.rule.name === "client-no-server" && v.from === "src/modules/a/sub/client.ts" && v.to === "src/modules/boot/server/index.ts"),
+          `expected client-no-server on sub/client.ts -> /server/, got: ${JSON.stringify(summary.violations)}`,
+        );
+      },
+    );
+  });
+});
+
+describe("shared dependency-cruiser rules: automatic 1-level submodules, max depth 1, and property tests", () => {
+  test("passes when parent and sibling submodules import via sub/index.ts or sub/client.ts and property tests import pure internals", () => {
+    withProject(
+      {
+        "src/main.ts": 'import { read } from "./modules/reading/index.ts";\nconsole.log(read());\n',
+        "src/browser.tsx": 'import { renderClient } from "./modules/reading/client.ts";\nconsole.log(renderClient());\n',
+        "src/modules/reading/index.ts":
+          'import { parse } from "./curriculum/index.ts";\nimport { format } from "./format.ts";\nexport const read = () => format(parse("x"));\n',
+        "src/modules/reading/client.ts":
+          'import { view } from "./curriculum/client.ts";\nexport const renderClient = () => view();\n',
+        "src/modules/reading/format.ts": "export const format = (s: string) => s.trim();\n",
+        "src/modules/reading/reading.property.test.ts":
+          'import { format } from "./format.ts";\nconsole.log(format(" hi "));\n',
+        "src/modules/reading/curriculum/index.ts":
+          'import { tokenize } from "./tokenize.ts";\nexport const parse = (s: string) => tokenize(s);\n',
+        "src/modules/reading/curriculum/client.ts": 'export const view = () => "ok";\n',
+        "src/modules/reading/curriculum/tokenize.ts": "export const tokenize = (s: string) => s;\n",
+        "src/modules/reading/curriculum/curriculum.property.test.ts":
+          'import { tokenize } from "./tokenize.ts";\nconsole.log(tokenize("a"));\n',
+        "src/modules/reading/render/index.ts":
+          'import { parse } from "../curriculum/index.ts";\nexport const render = (s: string) => parse(s);\n',
+        "src/modules/reading/render/render.test.ts":
+          'import { render } from "./index.ts";\nconsole.log(render("a"));\n',
+      },
+      (root) => {
+        // Also import render from reading/index.ts so it's not an orphan
+        writeFileSync(
+          join(root, "src/modules/reading/index.ts"),
+          'import { parse } from "./curriculum/index.ts";\nimport { render } from "./render/index.ts";\nimport { format } from "./format.ts";\nexport const read = () => render(format(parse("x")));\n',
+        );
+        const summary = runDepcruise(root);
+        assert.deepEqual(summary.violations, []);
+      },
+    );
+  });
+
+  test("forbids bypassing submodule index.ts/client.ts from parent, sibling submodule, or outside module", () => {
+    withProject(
+      {
+        "src/main.ts":
+          'import { read } from "./modules/reading/index.ts";\nimport { parse } from "./modules/reading/curriculum/index.ts";\nconsole.log(read(), parse("x"));\n',
+        "src/modules/reading/index.ts":
+          'import { tokenize } from "./curriculum/tokenize.ts";\nimport { render } from "./render/index.ts";\nexport const read = () => render(tokenize("x"));\n',
+        "src/modules/reading/curriculum/index.ts":
+          'import { tokenize } from "./tokenize.ts";\nexport const parse = (s: string) => tokenize(s);\n',
+        "src/modules/reading/curriculum/tokenize.ts": "export const tokenize = (s: string) => s;\n",
+        "src/modules/reading/render/index.ts":
+          'import { tokenize } from "../curriculum/tokenize.ts";\nexport const render = (s: string) => tokenize(s);\n',
+      },
+      (root) => {
+        const summary = runDepcruise(root);
+        assert.ok(
+          summary.violations.some(
+            (v) => v.rule.name === "submodule-encapsulation-from-parent" && v.from === "src/modules/reading/index.ts" && v.to === "src/modules/reading/curriculum/tokenize.ts",
+          ),
+          `expected submodule-encapsulation-from-parent, got: ${JSON.stringify(summary.violations)}`,
+        );
+        assert.ok(
+          summary.violations.some(
+            (v) => v.rule.name === "submodule-encapsulation" && v.from === "src/modules/reading/render/index.ts" && v.to === "src/modules/reading/curriculum/tokenize.ts",
+          ),
+          `expected submodule-encapsulation, got: ${JSON.stringify(summary.violations)}`,
+        );
+        assert.ok(
+          summary.violations.some(
+            (v) => v.rule.name === "deep-modules-from-outside" && v.from === "src/main.ts" && v.to === "src/modules/reading/curriculum/index.ts",
+          ),
+          `expected deep-modules-from-outside on submodule entrypoint, got: ${JSON.stringify(summary.violations)}`,
+        );
+      },
+    );
+  });
+
+  test("forbids nesting 2 levels deep (src/modules/a/b/c/file.ts) whether imported, importing, or orphan", () => {
+    withProject(
+      {
+        "src/main.ts": 'import { a } from "./modules/a/index.ts";\nconsole.log(a());\n',
+        "src/modules/a/index.ts": 'import { b } from "./b/index.ts";\nexport const a = () => b();\n',
+        "src/modules/a/b/index.ts": 'import { deep } from "./c/file.ts";\nexport const b = () => deep();\n',
+        "src/modules/a/b/c/file.ts": "export const deep = () => 1;\n",
+        "src/modules/a/b/c/nested.test.ts": 'import { b } from "../index.ts";\nconsole.log(b());\n',
+        "src/modules/a/b/c/standalone.test.ts": "export const x = 1;\n",
+      },
+      (root) => {
+        const summary = runDepcruise(root);
+        assert.ok(
+          summary.violations.some((v) => v.rule.name === "module-max-depth" && v.to === "src/modules/a/b/c/file.ts"),
+          `expected module-max-depth on imported file, got: ${JSON.stringify(summary.violations)}`,
+        );
+        assert.ok(
+          summary.violations.some((v) => v.rule.name === "module-max-depth-from" && v.from === "src/modules/a/b/c/nested.test.ts"),
+          `expected module-max-depth-from on importing deep test file, got: ${JSON.stringify(summary.violations)}`,
+        );
+        assert.ok(
+          summary.violations.some((v) => v.rule.name === "module-max-depth-orphan" && v.from === "src/modules/a/b/c/standalone.test.ts"),
+          `expected module-max-depth-orphan on standalone deep file, got: ${JSON.stringify(summary.violations)}`,
+        );
+      },
+    );
+  });
+
+  test("SHARED_RULES in guard.js and SHARED_RULE_NAMES in dependency-cruiser-rules.cjs stay in sync with dependency-cruiser.cjs", () => {
+    const baseConfig = require("../config/dependency-cruiser.cjs");
+    const { clientBoundary } = require("../config/dependency-cruiser-rules.cjs");
+    const ruleNames = (baseConfig.forbidden ?? []).map((r) => r.name ?? "").filter(Boolean);
+    assert.ok(ruleNames.length >= 15);
+
+    for (const name of ruleNames) {
+      assert.throws(
+        () => clientBoundary({ serverModules: ["db"], name }),
+        /collides with a shared raw-stack rule/,
+        `SHARED_RULE_NAMES in dependency-cruiser-rules.cjs is missing "${name}"`,
+      );
+      const badConfig = `module.exports = {
+        extends: require.resolve("raw-stack/dependency-cruiser"),
+        forbidden: [{ name: ${JSON.stringify(name)}, severity: "ignore", from: {}, to: {} }],
+      };\n`;
+      withProject(
+        { "src/main.ts": "export const x = 1;\n" },
+        (root) => {
+          const problems = guard(root, []);
+          assert.ok(
+            problems.some((p) => p.includes(`redefines the shared rule "${name}"`)),
+            `SHARED_RULES in lib/guard.js is missing "${name}"`,
+          );
+        },
+        badConfig,
+      );
+    }
   });
 });
