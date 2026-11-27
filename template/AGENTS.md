@@ -81,11 +81,12 @@ The rules are strict on purpose. Fix the cause; don't work around a rule.
 
 Hooks in `.claude/settings.json` run the fast tiers for you in Claude Code:
 
-| When            | What runs                                                                                                                                                                                           | Time        |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| After each edit | Lint the edited file, check it for suppression comments and fast-check settings                                                                                                                     | about 0.4 s |
-| When you stop   | `vp check --fix`, related `--project unit` tests (properties at 100 runs), dependency-cruiser, module health, config guard. Blocks until it passes. Skipped if nothing changed since the last pass. | 1 to 3 s    |
-| Before a PR     | The `verify` skill: `pnpm verify` (everything: unit, property at 1000 runs, e2e, browser), then run the app and check each feature you touched against `FEATURES.md`                                | longer      |
+| When                     | What runs                                                                                                                                                                                                                                | Time        |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| After each edit          | Lint the edited file, check it for suppression comments and fast-check settings                                                                                                                                                          | about 0.4 s |
+| When you stop            | `vp check --fix`, related `--project unit` tests (properties at 100 runs), dependency-cruiser, module health, config guard. Blocks until it passes. Skipped if nothing changed since the last pass.                                      | 1 to 3 s    |
+| Before a PR              | The `verify` skill: `pnpm verify` (everything: unit, property at 1000 runs, e2e, browser), then run the app and check each feature you touched against `FEATURES.md`                                                                     | longer      |
+| Periodically / on demand | The `audit` skill (`.claude/skills/audit/SKILL.md`): read-only whole-repo architecture audit (`raw-stack health --json`, test ratios, PR footprints, deep-module rubric) producing ready-to-file refactor issue specs — not for every PR | on demand   |
 
 In other agent harnesses (without Claude Code hooks), run `pnpm exec raw-stack verify` directly after edits for the same fast loop, `pnpm verify` (or `pnpm exec raw-stack verify --checks` and `--browser`) before opening a PR, and `pnpm exec raw-stack health` to inspect the full module health table.
 
