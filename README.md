@@ -4,8 +4,8 @@ Guardrails for TypeScript projects on [Vite+](https://viteplus.dev), built so ag
 
 - **Strict TypeScript** (TS 7): `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `erasableSyntaxOnly` and more.
 - **Type-aware Oxlint**, every finding an error: no `any`, no unsafe calls, no floating promises, exhaustive switches, size limits.
-- **Deep modules** enforced by dependency-cruiser: each `src/modules/<name>/index.ts` is the module's only way in. Also no cycles, undeclared deps or dev deps in shipped code; `no-orphans` checks reachability from `src/main.ts(x)` / `src/browser.ts(x)` so dead production files fail even when they have outgoing imports; and `not-to-testing` keeps shipped code from importing `src/testing/`. Opt-in presets (`raw-stack/dependency-cruiser-rules`) add `clientBoundary` and `deepSubmodules`.
-- **Module health** (`raw-stack health`): reports per-module production file count, production LOC, `index.ts` export utilization (prod, test-only, unused), and sibling fan-out, with soft-threshold warnings and `--strict` for CI or pre-PR checks.
+- **Deep modules & client/server isolation** enforced by dependency-cruiser: each module exposes `src/modules/<name>/index.ts(x)` and an optional `src/modules/<name>/client.ts(x)` browser entrypoint. Subdirectories under a module are automatically enforced as 1-level encapsulated submodules (`src/modules/<mod>/<submod>/index.ts(x)` or `client.ts(x)`), with max nesting depth 1 (no `src/modules/<mod>/<a>/<b>/...`). Client/browser files (`src/browser.ts(x)`, `client.ts(x)`, `*.client.ts(x)`, `/client/`) are prevented by default (`client-no-node`, `client-no-server`) from reaching Node built-ins (except `type-only` imports), `*.server.ts(x)` / `/server/`, or `src/modules/database/`, while pure/isomorphic modules (like `ui`) remain importable. Also no cycles, undeclared deps or dev deps in shipped code; `no-orphans` checks reachability from `src/main.ts(x)` / `src/browser.ts(x)` so dead production files fail even when they have outgoing imports; and `not-to-testing` keeps shipped code from importing `src/testing/`. Custom project boundaries can extend these defaults via `raw-stack/dependency-cruiser-rules`.
+- **Module health** enforced in `raw-stack verify` (and inspectable with `raw-stack health`): checks per-unit production file counts (`<= 20`) and per-entrypoint export counts (`<= 25` each for `index.ts(x)` and `client.ts(x)`) independently for each parent module and 1-level submodule, top-level sibling fan-out (`<= 50%` once `>= 6` sibling modules exist, i.e. 7+ modules), and unused exports across both `index.ts(x)` and `client.ts(x)` (unused or test-only value exports fail; exported types/interfaces transitively referenced by a live exported signature in the same entrypoint pass, while genuinely dead type exports fail).
 - **Guard**: no suppression comments, and project config can't loosen the shared rules. It loads `vite.config.ts` and checks the resolved test settings, so a project can't drop the unit or e2e test projects or narrow which tests they run.
 - **Browser tests** (opt-in): `raw-stack/playwright` exports `rawStackPlaywright()` for `playwright.config.ts`: fully parallel, Chromium only locally, Chromium and WebKit in CI (inside Playwright's image, so nothing installs), traces kept on failure, no retries, and native `PW_SHARD` (`"<current>/<total>"`, e.g. `"2/4"`) sharding support. The guard rejects `waitForTimeout`, `waitForSelector` and CSS or XPath selectors, and `verify --full` runs the non-browser checks first and `playwright test` afterward when the config exists. For larger suites, split CI into `raw-stack verify --checks` and sharded `raw-stack verify --browser` jobs. A project with one developer can run browser tests on only one kind of CI run (both commented out in the template): `RAW_STACK_PR_BROWSER_TESTS: "off"` skips them on PRs and leaves them to the push to main; `RAW_STACK_MAIN_BROWSER_TESTS: "off"` skips them on the push to main, whose merge its PR already tested, so it deploys sooner. Local runs always run them.
 - **Zero test retries**: a flaky test gets its cause fixed, or is deleted if it no longer states a requirement. The guard rejects `retry` in the config and on test tags, `{ retry }` or Playwright `retries` in test files, `--retry`/`--retries` in package.json scripts and CI workflows, and `vitest.config.*` files, which Vitest reads instead of `vite.config.ts`.
@@ -34,12 +34,12 @@ Change the tag in `package.json` (`"raw-stack": "github:ryan-a-wood/raw-stack#v0
 
 ## CLI
 
-- `raw-stack verify`: fast tier. `vp check --fix`, `--project unit` tests related to files changed on this branch, dependency-cruiser on `src/`, guard. Runs automatically on Claude Code Stop, or directly via `pnpm exec raw-stack verify` from other harnesses.
-- `raw-stack verify --full`: everything, no fixes: runs `--checks` in parallel first (unit tests with 1000 runs per property test, never writing snapshots, the e2e tests in `e2e/`, `vp check`, dependency-cruiser, guard) and Playwright browser tests afterward so Playwright does not compete for CPU/RAM.
-- `raw-stack verify --checks`: full non-browser tier (`vp check`, unit tests at 1000 property runs, Vitest `e2e` with `--update=none`, dependency-cruiser, guard). Skips Playwright.
+- `raw-stack verify`: fast tier. `vp check --fix`, `--project unit` tests related to files changed on this branch, dependency-cruiser on `src/`, strict module health check, guard. Runs automatically on Claude Code Stop, or directly via `pnpm exec raw-stack verify` from other harnesses.
+- `raw-stack verify --full`: everything, no fixes: runs `--checks` in parallel first (unit tests with 1000 runs per property test, never writing snapshots, the e2e tests in `e2e/`, `vp check`, dependency-cruiser, strict module health check, guard) and Playwright browser tests afterward so Playwright does not compete for CPU/RAM.
+- `raw-stack verify --checks`: full non-browser tier (`vp check`, unit tests at 1000 property runs, Vitest `e2e` with `--update=none`, dependency-cruiser, strict module health check, guard). Skips Playwright.
 - `raw-stack verify --browser`: Playwright browser tests only (respects `RAW_STACK_PR_BROWSER_TESTS` / `RAW_STACK_MAIN_BROWSER_TESTS`; succeeds cleanly with a skip message when `playwright.config.ts` does not exist).
 - `raw-stack guard [files...]`: suppression comments, fast-check settings that weaken a property, snapshots outside `e2e/` or in separate files, test retries, config overrides, and a verify workflow that no longer runs `pnpm verify` (or split `--checks` + `--browser`) and the snapshot report.
-- `raw-stack health [--json] [--strict]`: prints per-module health metrics (prod files, prod LOC, `index.ts` export usage, sibling fan-out) and soft-threshold warnings. Exits 0 by default; `--strict` exits 1 when warnings exist. See [Module health](#module-health).
+- `raw-stack health [--json] [--strict]`: prints per-unit health metrics (prod files, prod LOC, `index.ts(x)` / `client.ts(x)` export usage, top-level sibling fan-out) and any violations. Exits 0 by default for inspection; `--strict` exits 1 when violations exist (and `raw-stack verify` always fails on violations). See [Module health](#module-health).
 - `raw-stack cloudflare-secrets [--repo owner/name] [--account-id id] [--config file] [--dry-run]`: creates a Cloudflare API token scoped to what the project's wrangler config deploys and stores it as the GitHub Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. See [Deploy to Cloudflare](#deploy-to-cloudflare).
 - `raw-stack snapshots [--base <ref>]`: compares the inline snapshots with where the branch left `<ref>` (default: the default branch) and lists the new, changed and removed ones, with the old values. It reports and never fails.
 
@@ -81,58 +81,65 @@ jobs:
 - `rawStackPlaywright()` reads `PW_SHARD` (`"<current>/<total>"`, e.g. `"2/4"`). Valid shards with `total > 1` set Playwright's `shard: { current, total }`; unset, empty, or `"1/1"` omits `shard`; malformed or out-of-range values (such as `"0/2"`, `"3/2"`, or `"foo"`) throw so misconfigured CI shards fail loudly instead of silently running the full suite on every shard.
 - `raw-stack guard` accepts `.github/workflows/verify.yml` with either `run: pnpm verify` or split `run: pnpm exec raw-stack verify --checks` (or `run: pnpm verify:checks` when `package.json` defines `"verify:checks": "raw-stack verify --checks"`) plus, whenever `playwright.config.ts` exists, `run: pnpm exec raw-stack verify --browser` (or `run: pnpm verify:browser` when `package.json` defines `"verify:browser": "raw-stack verify --browser"`).
 
-## Opt-in import-graph rules
+## Import-graph rules & custom boundaries
 
-The shared `.dependency-cruiser.cjs` config enforces deep modules, no cycles, reachability from `src/main.ts(x)` / `src/browser.ts(x)` (`no-orphans`), and keeps shipped code from importing tests (`not-to-test`) or `src/testing/` (`not-to-testing`).
+The shared `.dependency-cruiser.cjs` config enforces module architecture out of the box:
 
-For projects that also need a client/server boundary or encapsulated submodules, spread opt-in rule builders from `raw-stack/dependency-cruiser-rules` into `forbidden` in `.dependency-cruiser.cjs`:
+- **Deep modules (`deep-modules`, `deep-modules-from-outside`)**: external callers may import a module only through `src/modules/<name>/index.ts(x)` or optional `src/modules/<name>/client.ts(x)`.
+- **Zero-config client/server isolation (`client-no-node`, `client-no-server`)**: browser entrypoints and client files (`src/browser.ts(x)`, `src/modules/<mod>/client.ts(x)`, `src/modules/<mod>/<submod>/client.ts(x)`, `*.client.ts(x)`, `/client/`) cannot reach (directly or transitively) runtime Node built-ins (`client-no-node`; `type-only` imports are allowed), server-only files (`*.server.ts(x)` or `/server/`), or `src/modules/database/` (`client-no-server`). Pure/isomorphic modules (such as `src/modules/ui/index.ts`) remain importable from client files.
+- **Automatic 1-level deep submodules (`submodule-encapsulation`, `submodule-encapsulation-from-parent`, `module-max-depth*`)**: any directory `src/modules/<mod>/<submod>/` is treated as an encapsulated submodule. Parent files and sibling submodules inside `<mod>` may import it only through `src/modules/<mod>/<submod>/index.ts(x)` or `client.ts(x)`, while callers outside `<mod>` remain forbidden from importing submodules at all. Nesting deeper than 1 level (`src/modules/<mod>/<a>/<b>/...`) is forbidden (`module-max-depth`, `module-max-depth-from`, `module-max-depth-orphan`).
+- **White-box property tests**: `*.property.test.ts(x)` inside a module (or submodule) may import pure internal files directly, so you never need to widen `index.ts` with test-only helpers.
+- **Graph hygiene**: no cycles (`no-circular`), reachability from `src/main.ts(x)` / `src/browser.ts(x)` (`no-orphans`), no undeclared or unresolvable imports, no devDependencies in shipped code (`not-to-dev-dep`), and shipped code cannot import tests (`not-to-test`) or `src/testing/` (`not-to-testing`).
+
+For projects that want additional project-specific server modules or custom client patterns beyond the built-in defaults, spread helpers from `raw-stack/dependency-cruiser-rules` into `forbidden` in `.dependency-cruiser.cjs`:
 
 ```cjs
-const { clientBoundary, deepSubmodules } = require("raw-stack/dependency-cruiser-rules");
+const { clientBoundary } = require("raw-stack/dependency-cruiser-rules");
 
 module.exports = {
   extends: require.resolve("raw-stack/dependency-cruiser"),
   forbidden: [
-    ...clientBoundary({ serverModules: ["db", "secrets", "node:*"] }),
-    ...deepSubmodules({ modules: ["reading", "web"] }),
+    ...clientBoundary({ serverModules: ["secrets", "billing"] }),
   ],
 };
 ```
 
-- `clientBoundary({ serverModules, clientPattern?, name? })`: blocks client files from importing `serverModules` directly or transitively (`reachable: true`). Each entry in `serverModules` can be a module name under `src/modules/` (e.g. `"db"`), a Node built-in (`"node:fs"` or `"node:*"` for all Node core modules), or a regex path pattern (e.g. `"^src/server/"`). `clientPattern` defaults to `DEFAULT_CLIENT_PATTERN` (`*.client.ts(x)`, `.../client/...`, and `src/browser.ts(x)`), excluding `*.test.ts(x)`.
-- `deepSubmodules({ modules?, name? })`: enforces `src/modules/<mod>/<submod>/index.ts(x)` encapsulation so code outside a submodule (including sibling submodules and the parent module's root files) imports it only through its `index.ts(x)`. Omit `modules` to apply to every module under `src/modules/`.
+- `clientBoundary({ serverModules, clientPattern?, name? })`: blocks client files from reaching extra `serverModules` directly or transitively (`reachable: true`). Each entry in `serverModules` can be a module name under `src/modules/` (e.g. `"secrets"`), a Node built-in (`"node:fs"` or `"node:*"`), or a regex path pattern (e.g. `"^src/private/"`). `clientPattern` defaults to `DEFAULT_CLIENT_PATTERN` (`*.client.ts(x)`, `/client/`, `src/browser.ts(x)`, and `src/modules/<mod>(/<submod>)?/client.ts(x)`), excluding `*.test.ts(x)`.
+- `deepSubmodules({ modules?, name? })`: kept for backwards compatibility with existing configs (also allowing `client.ts(x)`), though 1-level submodule encapsulation is now enforced automatically by the shared config.
 
 Both builders reject custom `name` values that collide with raw-stack's shared rules, so they work cleanly with `raw-stack guard`.
 
 ## Module health
 
-Run `raw-stack health` from a project root to inspect every module under `src/modules/`:
+Module health is enforced automatically as part of `raw-stack verify` (both the fast/Stop-hook tier and the full/CI tier). Run `raw-stack health` directly from a project root to inspect every module and 1-level submodule under `src/modules/`:
 
 ```bash
-pnpm exec raw-stack health              # human-readable table + warnings (always exits 0)
+pnpm exec raw-stack health              # human-readable table + violations (exits 0)
 pnpm exec raw-stack health --json       # machine-readable JSON report
-pnpm exec raw-stack health --strict     # exits 1 if any warning is present
+pnpm exec raw-stack health --strict     # exits 1 if any violation is present
 ```
 
-For each module it reports:
+For each encapsulated unit (each parent module's direct files and each 1-level submodule `src/modules/<mod>/<submod>/` independently), it reports:
 
-- **Files / LOC**: production `.ts`/`.tsx` files and lines of code (excluding `*.test.ts(x)`, `*.d.ts`, `src/testing/`, and `e2e/`).
-- **Exports (Prod / Test-only / Unused)**: symbols exported from `src/modules/<name>/index.ts(x)` (including re-exports, types, default exports, and namespace-import usage) broken down by whether they are imported by production code outside the module, only by tests / `src/testing/` / `e2e/`, or nowhere.
-- **Fan-out**: how many sibling modules under `src/modules/` this module's production files import (`count/totalSiblings`).
+- **Files / LOC**: production `.ts`/`.tsx` files and lines of code in that unit (excluding `*.test.ts(x)`, `*.d.ts`, `src/testing/`, and `e2e/`).
+- **Exports**: symbols exported from `index.ts(x)` and `client.ts(x)` (including re-exports, types, default exports, and namespace-import usage), tracking whether each export is used by external production code, transitively referenced by a live exported signature in the same entrypoint (`usedBySignature`), used only by tests, or completely unused.
+- **Fan-out**: evaluated at the top-level module (`src/modules/<mod>/**`) — how many sibling modules under `src/modules/` this module's production files import (`count/totalSiblings`), so submodules cannot hide cross-module coupling.
 
-Default warning thresholds:
+Enforced limits (fail `raw-stack verify` and `raw-stack health --strict`):
 
-- **Production files**: `> 20` (`prod-files`)
-- **Index exports**: `> 25` (`index-exports`)
-- **Sibling fan-out**: `> 50%` when there are at least 2 sibling modules (`sibling-fan-out`)
-- **Unused index exports**: any export not imported anywhere (`unused-exports`)
+- **Production files per unit**: `<= 20` (`prod-files`) — split a growing module into sibling modules or 1-level submodules.
+- **Entrypoint exports per unit**: `<= 25` (`index-exports`) per entrypoint (`index.ts(x)` and `client.ts(x)` checked independently) — narrow the interface or split the unit.
+- **Top-level sibling fan-out**: `<= 50%` when at least `6` sibling modules exist, i.e. 7+ modules (`sibling-fan-out`) — lift cross-module wiring to `src/main.ts` or decouple modules.
+- **Unused exports** (`unused-exports`):
+  - Every exported **value** in `index.ts(x)` or `client.ts(x)` must have at least one external production importer — unused and `testOnly` value exports both fail verify. (Use white-box `*.property.test.ts(x)` inside the module for pure internal helpers instead of widening `index.ts`.)
+  - Exported **types and interfaces** transitively referenced by a live exported signature (`usedBySignature`) in the same entrypoint pass; genuinely dead unreferenced type exports fail.
 
 ## Scaling guidance
 
 `template/AGENTS.md` codifies the conventions for keeping a raw-stack repo clean as it grows:
 
-- **Vertical feature slices**: keep `src/modules/` flat and the web/app shell thin (auth, layout, HTTP helpers, route registry) so each feature owns its domain, routes, pages, styles, and client islands (enforced with `clientBoundary`). Split a module into cohesive sibling modules — or `deepSubmodules` — before ~15–20 prod files or ~25 `index.ts` exports, using `pnpm exec raw-stack health` to watch size, fan-out, and unused exports.
-- **Property tests without bloating `index.ts`**: keep behavioral unit tests going through `index.ts`, and never widen `index.ts` solely for property tests — extract pure algorithms into a small focused module or let white-box `*.property.test.ts` files inside the module import internal helpers directly.
+- **Vertical feature slices**: keep `src/modules/` flat and the web/app shell thin (auth, layout, HTTP helpers, route registry) so each feature owns its domain, routes, pages, styles, and client islands (using optional `client.ts(x)` entrypoints, with client/server isolation enforced by default). Split a module into cohesive sibling modules or 1-level submodules before hitting the enforced `<= 20` prod files, `<= 25` entrypoint exports, or `<= 50%` sibling fan-out limits.
+- **Property tests without bloating `index.ts`**: keep behavioral unit tests going through `index.ts` (or `client.ts`), and never widen `index.ts` solely for property tests (test-only value exports fail `raw-stack verify`) — extract pure algorithms into a small focused module or let white-box `*.property.test.ts(x)` files inside the module import pure internal helpers directly.
 - **Cohesive file splits**: under `max-lines: 300`, split by concept and keep static stylesheets/assets as `.css` or data files instead of mechanical `-methods.ts`, `-views.tsx`, or CSS-in-TS shards.
 - **Fast-loop behavioral tests for routes & UI**: because the Stop hook (`raw-stack verify`) runs `--project unit` only, pair Playwright e2e tests with fast in-process route/SSR and component unit tests.
 - **Scaling specs & CI**: past ~10–15 features, split feature specs into `features/<name>.md` and keep `FEATURES.md` as an index linking each doc to its `e2e/` test; for larger Playwright suites, split CI into `raw-stack verify --checks` and sharded `raw-stack verify --browser` jobs via `PW_SHARD`.

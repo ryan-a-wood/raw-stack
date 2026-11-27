@@ -16,12 +16,20 @@ const { builtinModules } = require("node:module");
 const TEST = "\\.test\\.tsx?$";
 const MODULE_NAME = /^[A-Za-z0-9._-]+$/;
 
-/** Default pattern identifying client-side code: `*.client.ts(x)`, `.../client/...`, and `src/browser.ts(x)`. */
-const DEFAULT_CLIENT_PATTERN = "(?:\\.client\\.tsx?$|/client/|^src/browser\\.tsx?$)";
+/** Default pattern identifying client-side code: `*.client.ts(x)`, `.../client/...`, `src/browser.ts(x)`, and `src/modules/<mod>(/<submod>)?/client.ts(x)`. */
+const DEFAULT_CLIENT_PATTERN =
+  "(?:\\.client\\.tsx?$|/client/|^src/browser\\.tsx?$|^src/modules/[^/]+/client\\.tsx?$|^src/modules/[^/]+/[^/]+/client\\.tsx?$)";
 
 const SHARED_RULE_NAMES = new Set([
   "deep-modules",
   "deep-modules-from-outside",
+  "submodule-encapsulation",
+  "submodule-encapsulation-from-parent",
+  "module-max-depth",
+  "module-max-depth-from",
+  "module-max-depth-orphan",
+  "client-no-node",
+  "client-no-server",
   "no-circular",
   "no-orphans",
   "not-to-unresolvable",
@@ -201,12 +209,12 @@ function deepSubmodules(options = {}) {
   }
 
   const subInternal = `^src/modules/${modPattern}/[^/]+/.`;
-  const subEntry = `^src/modules/${modPattern}/[^/]+/index\\.tsx?$`;
+  const subEntry = `^src/modules/${modPattern}/[^/]+/(?:index|client)\\.tsx?$`;
 
   return [
     {
       name: ruleName,
-      comment: "A submodule is used only through its index.ts. Import the submodule, not a file inside it.",
+      comment: "A submodule is used only through its index.ts(x) or client.ts(x). Import the submodule entrypoint, not a file inside it.",
       severity: "error",
       from: { path: `^src/modules/(${modPattern})/([^/]+)/` },
       to: {
@@ -216,7 +224,7 @@ function deepSubmodules(options = {}) {
     },
     {
       name: outsideRuleName,
-      comment: "Code outside a submodule uses it only through its index.ts.",
+      comment: "Code outside a submodule uses it only through its index.ts(x) or client.ts(x).",
       severity: "error",
       from: { pathNot: `^src/modules/${modPattern}/[^/]+/` },
       to: {

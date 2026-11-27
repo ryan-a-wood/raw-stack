@@ -116,7 +116,10 @@ describe("raw-stack health analysis", () => {
 
         assert.deepEqual(
           report.warnings.map((w) => ({ module: w.module, kind: w.kind })),
-          [{ module: "a", kind: "unused-exports" }],
+          [
+            { module: "a", kind: "unused-exports" },
+            { module: "c", kind: "unused-exports" },
+          ],
         );
       },
     );
@@ -210,22 +213,36 @@ describe("raw-stack health analysis", () => {
     );
   });
 
-  test("triggers soft-threshold warnings for prodFiles (>20), indexExports (>25), siblingFanOut (>50% with >=2 siblings), and unused exports", async () => {
+  test("triggers warnings for prodFiles (>20), indexExports (>25), siblingFanOut (>50% with >=6 siblings), and unused exports", async () => {
     /** @type {Record<string, string>} */
     const files = {
-      "src/main.ts": 'import * as big from "./modules/big/index.ts";\nimport { a } from "./modules/a/index.ts";\nimport { b } from "./modules/b/index.ts";\nimport { c } from "./modules/c/index.ts";\nconsole.log(big, a, b, c);\n',
-      "src/modules/a/index.ts": "export const a = 1;\n",
-      "src/modules/b/index.ts": "export const b = 2;\n",
-      "src/modules/c/index.ts": "export const c = 3;\n",
+      "src/main.ts": [
+        'import * as big from "./modules/big/index.ts";',
+        'import { m1 } from "./modules/m1/index.ts";',
+        'import { m2 } from "./modules/m2/index.ts";',
+        'import { m3 } from "./modules/m3/index.ts";',
+        'import { m4 } from "./modules/m4/index.ts";',
+        'import { m5 } from "./modules/m5/index.ts";',
+        'import { m6 } from "./modules/m6/index.ts";',
+        "console.log(big, m1, m2, m3, m4, m5, m6);",
+      ].join("\n"),
+      "src/modules/m1/index.ts": "export const m1 = 1;\n",
+      "src/modules/m2/index.ts": "export const m2 = 2;\n",
+      "src/modules/m3/index.ts": "export const m3 = 3;\n",
+      "src/modules/m4/index.ts": "export const m4 = 4;\n",
+      "src/modules/m5/index.ts": "export const m5 = 5;\n",
+      "src/modules/m6/index.ts": "export const m6 = 6;\n",
     };
 
-    // big module: 21 prod files (index.ts + f1..f20), 26 exports, imports 2/3 siblings (67%)
+    // big module: 21 prod files (index.ts + f1..f20), 27 exports, imports 4/6 siblings (67%)
     const exportLines = [];
     for (let i = 1; i <= 26; i++) exportLines.push(`export const e${i} = ${i};`);
     files["src/modules/big/index.ts"] = [
-      'import { a } from "../a/index.ts";',
-      'import { b } from "../b/index.ts";',
-      "export const sum = a + b;",
+      'import { m1 } from "../m1/index.ts";',
+      'import { m2 } from "../m2/index.ts";',
+      'import { m3 } from "../m3/index.ts";',
+      'import { m4 } from "../m4/index.ts";',
+      "export const sum = m1 + m2 + m3 + m4;",
       ...exportLines,
     ].join("\n");
     for (let i = 1; i <= 20; i++) {
@@ -239,21 +256,25 @@ describe("raw-stack health analysis", () => {
       assert.ok(big);
       assert.equal(big.prodFiles, 21);
       assert.equal(big.exports.total, 27);
-      assert.equal(big.siblingFanOut.count, 2);
-      assert.equal(big.siblingFanOut.totalSiblings, 3);
-      assert.equal(big.siblingFanOut.percent, 67);
+      assert.equal(big.siblingFanOut?.count, 4);
+      assert.equal(big.siblingFanOut?.totalSiblings, 6);
+      assert.equal(big.siblingFanOut?.percent, 67);
 
       const kinds = report.warnings.filter((w) => w.module === "big").map((w) => w.kind).sort();
       assert.deepEqual(kinds, ["index-exports", "prod-files", "sibling-fan-out"]);
     });
   });
 
-  test("does not trigger sibling fan-out warning on 2-module projects (1/1 sibling) or at exact 50% (1/2)", async () => {
+  test("does not trigger sibling fan-out warning on a 4-module app (even when importing 3/3 siblings) or at 3/6 (50%)", async () => {
     await withFixture(
       {
-        "src/main.ts": 'import { a } from "./modules/a/index.ts";\nimport { b } from "./modules/b/index.ts";\nconsole.log(a(), b());\n',
-        "src/modules/a/index.ts": 'import { b } from "../b/index.ts";\nexport const a = () => b();\n',
+        "src/main.ts":
+          'import { a } from "./modules/a/index.ts";\nimport { b } from "./modules/b/index.ts";\nimport { c } from "./modules/c/index.ts";\nimport { d } from "./modules/d/index.ts";\nconsole.log(a(), b(), c(), d());\n',
+        "src/modules/a/index.ts":
+          'import { b } from "../b/index.ts";\nimport { c } from "../c/index.ts";\nimport { d } from "../d/index.ts";\nexport const a = () => b() + c() + d();\n',
         "src/modules/b/index.ts": "export const b = () => 1;\n",
+        "src/modules/c/index.ts": "export const c = () => 2;\n",
+        "src/modules/d/index.ts": "export const d = () => 3;\n",
       },
       (root) => {
         const report = analyzeHealth(root);
@@ -261,11 +282,213 @@ describe("raw-stack health analysis", () => {
         assert.deepEqual(report.warnings, []);
         const modA = report.modules.find((m) => m.name === "a");
         assert.ok(modA);
-        assert.equal(modA.siblingFanOut.count, 1);
-        assert.equal(modA.siblingFanOut.totalSiblings, 1);
-        assert.equal(modA.siblingFanOut.percent, 100);
+        assert.equal(modA.siblingFanOut?.count, 3);
+        assert.equal(modA.siblingFanOut?.totalSiblings, 3);
+        assert.equal(modA.siblingFanOut?.percent, 100);
       },
     );
+  });
+
+  test("counts prodFiles and entrypoint exports per 1-level submodule unit while evaluating sibling fan-out at top-level module", async () => {
+    /** @type {Record<string, string>} */
+    const files = {
+      "src/main.ts": [
+        'import { run } from "./modules/reading/index.ts";',
+        'import { m1 } from "./modules/m1/index.ts";',
+        'import { m2 } from "./modules/m2/index.ts";',
+        'import { m3 } from "./modules/m3/index.ts";',
+        'import { m4 } from "./modules/m4/index.ts";',
+        'import { m5 } from "./modules/m5/index.ts";',
+        'import { m6 } from "./modules/m6/index.ts";',
+        "console.log(run(), m1, m2, m3, m4, m5, m6);",
+      ].join("\n"),
+      "src/modules/m1/index.ts": "export const m1 = 1;\n",
+      "src/modules/m2/index.ts": "export const m2 = 2;\n",
+      "src/modules/m3/index.ts": "export const m3 = 3;\n",
+      "src/modules/m4/index.ts": "export const m4 = 4;\n",
+      "src/modules/m5/index.ts": "export const m5 = 5;\n",
+      "src/modules/m6/index.ts": "export const m6 = 6;\n",
+      "src/modules/reading/index.ts":
+        'import { parse } from "./parser/index.ts";\nimport { render } from "./render/index.ts";\nexport const run = () => render(parse());\n',
+      "src/modules/reading/parser/index.ts":
+        'import { m1 } from "../../m1/index.ts";\nimport { m2 } from "../../m2/index.ts";\nexport const parse = () => m1 + m2;\n',
+      "src/modules/reading/render/index.ts":
+        'import { m3 } from "../../m3/index.ts";\nimport { m4 } from "../../m4/index.ts";\nexport const render = (n: number) => n + m3 + m4;\n',
+    };
+    // 11 extra files in reading + 11 extra files in reading/parser = 24 total (>20), but each unit has 12 (<=20)
+    for (let i = 1; i <= 11; i++) {
+      files[`src/modules/reading/h${i}.ts`] = `export const h${i} = ${i};\n`;
+      files[`src/modules/reading/parser/p${i}.ts`] = `export const p${i} = ${i};\n`;
+    }
+
+    await withFixture(files, (root) => {
+      const report = analyzeHealth(root);
+      const reading = report.modules.find((m) => m.name === "reading");
+      const parser = report.modules.find((m) => m.name === "reading/parser");
+      const render = report.modules.find((m) => m.name === "reading/render");
+      assert.ok(reading && parser && render);
+
+      assert.equal(reading.prodFiles, 12);
+      assert.equal(parser.prodFiles, 12);
+      assert.equal(render.prodFiles, 1);
+      assert.equal(parser.isSubmodule, true);
+      assert.equal(parser.siblingFanOut, null);
+
+      // No prod-files warning because each unit is <= 20
+      assert.equal(report.warnings.some((w) => w.kind === "prod-files"), false);
+      // Top-level sibling fan-out STILL catches 4/6 (m1, m2 from parser + m3, m4 from render)
+      assert.deepEqual(reading.siblingFanOut?.modules, ["m1", "m2", "m3", "m4"]);
+      assert.ok(
+        report.warnings.some((w) => w.module === "reading" && w.kind === "sibling-fan-out"),
+        `expected top-level sibling-fan-out warning, got: ${JSON.stringify(report.warnings)}`,
+      );
+    });
+  });
+
+  test("allows exported types/interfaces referenced by live exported signatures (direct and re-exported) while flagging dead types and test-only values", async () => {
+    await withFixture(
+      {
+        "src/main.ts":
+          'import { createPointsService } from "./modules/points/index.ts";\nimport { createReService } from "./modules/reexp/index.ts";\nconsole.log(createPointsService(), createReService());\n',
+        "src/modules/points/index.ts": [
+          "export interface PointSummary { total: number; }",
+          "export interface PointsService { since(date: Date): PointSummary; }",
+          "export function createPointsService(): PointsService { return { since: () => ({ total: 0 }) }; }",
+          "export interface DeadType { x: string; }",
+          "export interface DeadChainA { b: DeadChainB; }",
+          "export interface DeadChainB { n: number; }",
+          "export function testOnlyFn() { return 1; }",
+        ].join("\n"),
+        "src/modules/points/points.test.ts":
+          'import { testOnlyFn, type PointSummary } from "./index.ts";\nconst s: PointSummary = { total: testOnlyFn() };\nconsole.log(s);\n',
+        "src/modules/reexp/types.ts": "export interface SummaryItem { id: string; }\n",
+        "src/modules/reexp/service.ts":
+          'import type { SummaryItem } from "./types.ts";\nexport interface ReService { list(): Promise<SummaryItem[]>; }\nexport const createReService = (): ReService => ({ list: async () => [] });\n',
+        "src/modules/reexp/index.ts":
+          'export { createReService, type ReService } from "./service.ts";\nexport type { SummaryItem } from "./types.ts";\n',
+      },
+      (root) => {
+        const report = analyzeHealth(root);
+        const points = report.modules.find((m) => m.name === "points");
+        assert.ok(points);
+        assert.deepEqual(points.exports.usedByProd, ["createPointsService"]);
+        assert.deepEqual(points.exports.usedBySignature, ["PointSummary", "PointsService"]);
+        assert.deepEqual(points.exports.testOnly, ["testOnlyFn"]);
+        assert.deepEqual(points.exports.unused, ["DeadChainA", "DeadChainB", "DeadType"]);
+
+        const reexp = report.modules.find((m) => m.name === "reexp");
+        assert.ok(reexp);
+        assert.deepEqual(reexp.exports.usedByProd, ["createReService"]);
+        assert.deepEqual(reexp.exports.usedBySignature, ["ReService", "SummaryItem"]);
+        assert.deepEqual(reexp.exports.testOnly, []);
+        assert.deepEqual(reexp.exports.unused, []);
+        assert.equal(report.warnings.some((w) => w.module === "reexp"), false);
+
+        const pointsWarn = report.warnings.find((w) => w.module === "points" && w.kind === "unused-exports");
+        assert.ok(pointsWarn);
+        assert.match(pointsWarn.message, /DeadType/);
+        assert.match(pointsWarn.message, /testOnlyFn/);
+        assert.doesNotMatch(pointsWarn.message, /PointSummary/);
+        assert.doesNotMatch(pointsWarn.message, /PointsService/);
+      },
+    );
+  });
+
+  test("recognizes types referenced by exported object literal methods/properties and inherited base class methods", async () => {
+    await withFixture(
+      {
+        "src/main.ts": 'import { api, Sub } from "./modules/sigs/index.ts";\nconsole.log(api, new Sub());\n',
+        "src/modules/sigs/index.ts": [
+          "export interface GetReq { id: string; }",
+          "export interface GetRes { ok: boolean; }",
+          "export interface PostRes { saved: boolean; }",
+          "export interface Out { v: number; }",
+          "const helper = (r: GetReq): PostRes => ({ saved: r.id.length > 0 });",
+          "export const api = {",
+          "  get(req: GetReq): GetRes { return { ok: req.id.length > 0 }; },",
+          "  helper,",
+          "};",
+          "class Base { get(): Out { return { v: 1 }; } }",
+          "export class Sub extends Base {}",
+        ].join("\n"),
+      },
+      (root) => {
+        const report = analyzeHealth(root);
+        assert.equal(report.ok, true, JSON.stringify(report.warnings));
+        const sigs = report.modules.find((m) => m.name === "sigs");
+        assert.ok(sigs);
+        assert.deepEqual(sigs.exports.usedByProd, ["Sub", "api"]);
+        assert.deepEqual(sigs.exports.usedBySignature, ["GetReq", "GetRes", "Out", "PostRes"]);
+        assert.deepEqual(sigs.exports.unused, []);
+      },
+    );
+  });
+
+  test("checks client.ts(x) entrypoints independently for export count and unused exports, and allows *.property.test.ts to import pure internal files", async () => {
+    await withFixture(
+      {
+        "src/main.ts": 'import { greet } from "./modules/ui/index.ts";\nconsole.log(greet("a"));\n',
+        "src/browser.tsx": 'import { Widget } from "./modules/ui/client.tsx";\nconsole.log(Widget());\n',
+        "src/modules/ui/pure.ts": "export const normalize = (s: string) => s.trim();\n",
+        "src/modules/ui/index.ts": 'import { normalize } from "./pure.ts";\nexport const greet = (s: string) => normalize(s);\n',
+        "src/modules/ui/client.tsx":
+          'export const Widget = () => <div />;\nexport const unusedClientExport = () => 1;\n',
+        "src/modules/ui/ui.property.test.ts":
+          'import { normalize } from "./pure.ts";\nconsole.log(normalize(" hi "));\n',
+      },
+      (root) => {
+        const report = analyzeHealth(root);
+        assert.equal(report.ok, false);
+        const ui = report.modules.find((m) => m.name === "ui");
+        assert.ok(ui);
+        assert.equal(ui.hasClient, true);
+        assert.equal(ui.clientFile, "src/modules/ui/client.tsx");
+        assert.deepEqual(ui.exports.usedByProd, ["greet"]);
+        assert.deepEqual(ui.exports.unused, []);
+        assert.deepEqual(ui.clientExports?.usedByProd, ["Widget"]);
+        assert.deepEqual(ui.clientExports?.unused, ["unusedClientExport"]);
+        assert.equal(report.warnings.length, 1);
+        assert.match(report.warnings[0]?.message ?? "", /client\.tsx.*unusedClientExport/);
+      },
+    );
+  });
+
+  test("checks export count per entrypoint (15 index + 15 client passes, 26 client fails) and prod-files per submodule (>20 fails)", async () => {
+    /** @type {Record<string, string>} */
+    const okFiles = {
+      "src/main.ts": 'import * as a from "./modules/a/index.ts";\nconsole.log(a);\n',
+      "src/browser.tsx": 'import * as ac from "./modules/a/client.ts";\nconsole.log(ac);\n',
+      "src/modules/a/index.ts": Array.from({ length: 15 }, (_, i) => `export const s${i} = ${i};`).join("\n") + "\n",
+      "src/modules/a/client.ts": Array.from({ length: 15 }, (_, i) => `export const c${i} = ${i};`).join("\n") + "\n",
+    };
+    await withFixture(okFiles, (root) => {
+      const report = analyzeHealth(root);
+      assert.equal(report.ok, true, JSON.stringify(report.warnings));
+    });
+
+    /** @type {Record<string, string>} */
+    const failFiles = {
+      "src/main.ts": 'import { root } from "./modules/a/index.ts";\nconsole.log(root());\n',
+      "src/browser.tsx": 'import * as ac from "./modules/a/client.ts";\nconsole.log(ac);\n',
+      "src/modules/a/index.ts": 'import { sub } from "./sub/index.ts";\nexport const root = () => sub();\n',
+      "src/modules/a/client.ts": Array.from({ length: 26 }, (_, i) => `export const c${i} = ${i};`).join("\n") + "\n",
+      "src/modules/a/sub/index.ts": "export const sub = () => 1;\n",
+    };
+    for (let i = 1; i <= 20; i++) {
+      failFiles[`src/modules/a/sub/f${i}.ts`] = `export const f${i} = ${i};\n`;
+    }
+    await withFixture(failFiles, (root) => {
+      const report = analyzeHealth(root);
+      assert.equal(report.ok, false);
+      assert.ok(
+        report.warnings.some((w) => w.module === "a" && w.kind === "index-exports" && w.message.includes("client.ts")),
+        `expected client.ts index-exports warning, got: ${JSON.stringify(report.warnings)}`,
+      );
+      assert.ok(
+        report.warnings.some((w) => w.module === "a/sub" && w.kind === "prod-files" && w.message.includes('submodule "a/sub"')),
+        `expected submodule a/sub prod-files warning, got: ${JSON.stringify(report.warnings)}`,
+      );
+    });
   });
 
   test("handles missing src/modules, empty src/modules, and modules without index.ts", async () => {

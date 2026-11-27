@@ -6,7 +6,17 @@ const TEST = "\\.test\\.tsx?$";
 const TESTING = "^src/testing/";
 const ENTRY = "^src/(main|browser)\\.tsx?$";
 const MODULE_INTERNAL = "^src/modules/[^/]+/.";
-const MODULE_ENTRY = "^src/modules/[^/]+/index\\.tsx?$";
+const MODULE_ENTRY = "^src/modules/[^/]+/(?:index|client)\\.tsx?$";
+const SUBMODULE_ENTRY = "^src/modules/[^/]+/[^/]+/(?:index|client)\\.tsx?$";
+const TOO_DEEP_MODULE = "^src/modules/[^/]+/[^/]+/[^/]+/";
+const CLIENT_FILES = [
+  "^src/browser\\.tsx?$",
+  "^src/modules/[^/]+/client\\.tsx?$",
+  "^src/modules/[^/]+/[^/]+/client\\.tsx?$",
+  "\\.client\\.tsx?$",
+  "/client/",
+];
+const SERVER_TARGETS = ["\\.server\\.tsx?$", "/server/", "^src/modules/database/"];
 
 /** @type {import("dependency-cruiser").IConfiguration} */
 module.exports = {
@@ -14,7 +24,7 @@ module.exports = {
     {
       name: "deep-modules",
       comment:
-        "A module is used only through its index.ts. Import the module, not a file inside it.",
+        "A module is used only through its index.ts(x) or client.ts(x). Import the module entrypoint, not a file inside it.",
       severity: "error",
       from: { path: "^src/modules/([^/]+)/" },
       to: { path: MODULE_INTERNAL, pathNot: ["^src/modules/$1/", MODULE_ENTRY] },
@@ -22,10 +32,78 @@ module.exports = {
     {
       name: "deep-modules-from-outside",
       comment:
-        "Code outside src/modules uses a module only through its index.ts.",
+        "Code outside src/modules uses a module only through its index.ts(x) or client.ts(x).",
       severity: "error",
       from: { pathNot: "^src/modules/" },
       to: { path: MODULE_INTERNAL, pathNot: MODULE_ENTRY },
+    },
+    {
+      name: "submodule-encapsulation",
+      comment:
+        "A submodule is used only through its index.ts(x) or client.ts(x). Import the submodule entrypoint, not a file inside it.",
+      severity: "error",
+      from: { path: "^src/modules/([^/]+)/([^/]+)/" },
+      to: {
+        path: "^src/modules/$1/[^/]+/.",
+        pathNot: ["^src/modules/$1/$2/", SUBMODULE_ENTRY],
+      },
+    },
+    {
+      name: "submodule-encapsulation-from-parent",
+      comment:
+        "A parent module uses its submodules only through their index.ts(x) or client.ts(x).",
+      severity: "error",
+      from: { path: "^src/modules/([^/]+)/[^/]+$" },
+      to: {
+        path: "^src/modules/$1/[^/]+/.",
+        pathNot: SUBMODULE_ENTRY,
+      },
+    },
+    {
+      name: "module-max-depth",
+      comment:
+        "Modules may be nested at most 1 submodule level deep (src/modules/<mod>/<submod>/<file>). Flatten deeper directories.",
+      severity: "error",
+      from: {},
+      to: { path: TOO_DEEP_MODULE },
+    },
+    {
+      name: "module-max-depth-from",
+      comment:
+        "Modules may be nested at most 1 submodule level deep (src/modules/<mod>/<submod>/<file>). Flatten deeper directories.",
+      severity: "error",
+      from: { path: TOO_DEEP_MODULE },
+      to: {},
+    },
+    {
+      name: "module-max-depth-orphan",
+      comment:
+        "Modules may be nested at most 1 submodule level deep (src/modules/<mod>/<submod>/<file>). Flatten deeper directories.",
+      severity: "error",
+      from: { path: TOO_DEEP_MODULE, orphan: true },
+      to: {},
+    },
+    {
+      name: "client-no-node",
+      comment:
+        "Browser entrypoints and client files cannot import Node built-ins (type-only imports are allowed).",
+      severity: "error",
+      from: { path: CLIENT_FILES, pathNot: TEST },
+      to: {
+        dependencyTypes: ["core"],
+        dependencyTypesNot: ["type-only"],
+      },
+    },
+    {
+      name: "client-no-server",
+      comment:
+        "Browser entrypoints and client files cannot reach server-only files (*.server.ts(x), /server/) or src/modules/database/.",
+      severity: "error",
+      from: { path: CLIENT_FILES, pathNot: TEST },
+      to: {
+        path: SERVER_TARGETS,
+        reachable: true,
+      },
     },
     {
       name: "no-circular",
