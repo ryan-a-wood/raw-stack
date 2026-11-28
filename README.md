@@ -40,6 +40,7 @@ Change the tag in `package.json` (`"raw-stack": "github:ryan-a-wood/raw-stack#v0
 - `raw-stack verify --browser`: Playwright browser tests only (respects `RAW_STACK_PR_BROWSER_TESTS` / `RAW_STACK_MAIN_BROWSER_TESTS`; succeeds cleanly with a skip message when `playwright.config.ts` does not exist).
 - `raw-stack guard [files...]`: suppression comments, fast-check settings that weaken a property, snapshots outside `e2e/` or in separate files, test retries, config overrides, and a verify workflow that no longer runs `pnpm verify` (or split `--checks` + `--browser`) and the snapshot report.
 - `raw-stack health [--json] [--strict]`: prints per-unit health metrics (prod files, prod LOC, `index.ts(x)` / `client.ts(x)` export usage, top-level sibling fan-out) and any violations. Exits 0 by default for inspection; `--strict` exits 1 when violations exist (and `raw-stack verify` always fails on violations). See [Module health](#module-health).
+- `raw-stack smoke --url <base-url> [--sha <git-sha>] [--health-path /api/health] [--health-timeout-ms 30000] [--browser]`: post-deploy smoke verification against a deployed URL. Polls the health endpoint for SHA propagation when `--sha` is given, then runs `smoke/**/*.smoke.test.ts` (and `smoke/**/*.smoke.spec.ts` when `--browser` is set). See [Post-deploy smoke verification](#post-deploy-smoke-verification).
 - `raw-stack cloudflare-secrets [--repo owner/name] [--account-id id] [--config file] [--dry-run]`: creates a Cloudflare API token scoped to what the project's wrangler config deploys and stores it as the GitHub Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. See [Deploy to Cloudflare](#deploy-to-cloudflare).
 - `raw-stack snapshots [--base <ref>]`: compares the inline snapshots with where the branch left `<ref>` (default: the default branch) and lists the new, changed and removed ones, with the old values. It reports and never fails.
 
@@ -182,6 +183,191 @@ The token's value is never printed, logged, written to disk or passed as an argu
 Keep it on your machine only: not in a repo, not in CI, not in an agent's environment.
 
 The account is the `--account-id` flag, then the config's `account_id`, then `$CLOUDFLARE_ACCOUNT_ID`, then the one account the bootstrap token can see.
+
+## Post-deploy smoke verification
+
+`raw-stack smoke` provides hosting-agnostic post-deploy verification with a Unix-composable design: `raw-stack smoke` owns deployment readiness polling and running your smoke suite against a live URL, while each repository's `.github/workflows/deploy.yml` composes its own host-native deploy, canary promotion, and rollback commands around it.
+
+### CLI & environment contract
+
+```bash
+pnpm exec raw-stack smoke \
+  --url <base-url> \
+  [--sha <git-sha>] \
+  [--health-path /api/health] \
+  [--health-timeout-ms 30000] \
+  [--browser]
+```
+
+- `--url <base-url>` (required): `http://` or `https://` origin (plus optional base path) with no query string or hash; trailing slashes are normalized. Passed to smoke tests as `SMOKE_BASE_URL`.
+- `--sha <git-sha>`: when provided, `raw-stack smoke` polls `<base-url><health-path>` before running any tests until the deployment serves the expected SHA (or fails on timeout before running Vitest/Playwright).
+- `--health-path`: health endpoint path starting with `/` (default `/api/health`).
+- `--health-timeout-ms`: positive integer timeout in ms (default `30000`, polling every `2000` ms).
+- `--browser`: also run Playwright browser smoke specs (`smoke/**/*.smoke.spec.ts`) after Vitest smoke tests.
+- `SMOKE_BASE_URL` and `SMOKE_HEADERS_JSON`:
+  - `raw-stack smoke` exports `SMOKE_BASE_URL` and forwards `SMOKE_HEADERS_JSON` to Vitest and Playwright smoke processes.
+  - `SMOKE_HEADERS_JSON` must be a JSON object mapping valid HTTP header names to string values (`Record<string, string>`, no CR/LF). Invalid JSON, arrays, non-string values, or invalid header names fail immediately without ever logging or printing header values or raw secret input.
+  - Use `SMOKE_HEADERS_JSON` for protected environments — Cloudflare Access Service Tokens (`CF-Access-Client-Id` / `CF-Access-Client-Secret`), Google IAP/IAM `Authorization: Bearer ...` tokens, API keys — or leave it unset for public apps.
+
+### `/api/health` contract & readiness polling vs. test retries
+
+When `--sha` is set, the health endpoint must return `HTTP 200` and identify the running build via:
+
+- a JSON body `{ "ok": true, "sha": "<git-sha>" }` (where `ok: false` is treated as not ready even on `HTTP 200`), and/or
+- an `X-Build-Sha: <git-sha>` response header.
+
+SHA comparison is case-insensitive and supports prefix matching (4+ characters) so short and full git SHAs match cleanly.
+
+Readiness polling is **deployment propagation waiting**, not test retries: CDN edge caches, Worker rollouts, and container swaps take seconds to propagate globally, and polling stops the moment the new SHA is live. Once ready, every smoke test still runs with **zero test retries** (`retries: 0`) so any behavioral failure fails the deployment.
+
+### Smoke test layout & guardrails
+
+- **Vitest smoke tests (`smoke/**/*.smoke.test.ts`)**: API/HTTP smoke tests executed via `vp test run --project smoke --update=none`.
+- **Playwright smoke specs (`smoke/**/*.smoke.spec.ts`)**: browser smoke tests executed when `--browser` is passed.
+- **TypeScript `include`**: `template/tsconfig.json` already includes `"smoke"` (`["src", "e2e", "smoke", "*.ts"]`). Existing projects adding a `smoke/` directory should also add `"smoke"` to `"include"` in `tsconfig.json` so `process.env` and Node types resolve during `vp check`.
+- **Offline verify isolation**: `smoke/` is excluded from `rawStack().test.projects` and `raw-stack verify` (`--project unit`, `--project e2e`, and default `playwright`) whenever `SMOKE_BASE_URL` is unset (and `raw-stack verify` explicitly clears `SMOKE_BASE_URL` / `SMOKE_HEADERS_JSON`), so local and PR verification remain offline and deterministic.
+- **Automatic Playwright targeting**: `rawStackPlaywright()` automatically detects `SMOKE_BASE_URL`, sets `use.baseURL`, switches `testDir` to `"smoke"` and `testMatch` to `"**/*.smoke.spec.ts"`, merges `SMOKE_HEADERS_JSON` into `use.extraHTTPHeaders`, and sets `webServer: undefined` so smoke runs never boot a local server. Pass `baseURL` and `webServer` as options to `rawStackPlaywright({ baseURL, webServer })` in `playwright.config.ts` so smoke mode disables `webServer` cleanly.
+- **Shared guardrails stay active**: `raw-stack guard` still checks `smoke/` for suppression comments, test retries, and Playwright anti-patterns (`waitForTimeout`, `waitForSelector`, CSS/XPath selectors). `no-orphans` and `raw-stack health` do not penalize `smoke/` files.
+
+### Expand-and-contract database migrations (safe rollbacks)
+
+Code rollbacks (such as `wrangler rollback` or shifting traffic away from a failed Cloud Run revision) only revert application code — they do not un-run destructive database migrations. Follow **expand-and-contract (additive-only)** discipline across **D1, Postgres, and SQLite**:
+
+1. **Expand**: Make schema changes additive and backwards-compatible with the currently running release (add nullable columns or columns with defaults, add new tables/indexes, backfill asynchronously or lazily in app code; avoid `DROP COLUMN`, `RENAME COLUMN`, or tightening `NOT NULL`/type constraints while old code may still serve traffic or be rolled back to).
+2. **Deploy, smoke, and stabilize**: Deploy the new app version, verify with `raw-stack smoke`, and keep the rollback window open without breaking the previous revision if a rollback triggers.
+3. **Contract**: Only in a **separate, later deployment** — after the new code is verified and the rollback window has closed — drop or rename superseded columns/tables/constraints.
+
+### Deploy workflow recipes (`.github/workflows/deploy.yml`)
+
+#### Cloudflare Workers (deploy, smoke, rollback on failure)
+
+```yaml
+name: deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      APP_URL: https://my-app.example.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Record current deployment
+        run: pnpm exec wrangler deployments list
+
+      - name: Deploy Worker
+        run: pnpm exec wrangler deploy
+
+      - name: Smoke check
+        env:
+          SMOKE_HEADERS_JSON: ${{ secrets.SMOKE_HEADERS_JSON }}
+        run: pnpm exec raw-stack smoke --url "$APP_URL" --sha "${{ github.sha }}" --browser
+
+      - name: Rollback on smoke failure
+        if: failure()
+        run: |
+          pnpm exec wrangler rollback --yes --message "Automatic rollback after failed smoke check for ${{ github.sha }}"
+          curl -fsS "${APP_URL}/api/health" >/dev/null
+          echo "::error::Smoke check failed for ${{ github.sha }}; rolled back Worker deployment."
+          exit 1
+```
+
+#### Google Cloud Run (zero-traffic canary, smoke, promote)
+
+```yaml
+name: deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Deploy canary revision with no live traffic
+        run: |
+          gcloud run deploy my-service \
+            --source . \
+            --region us-central1 \
+            --no-traffic \
+            --tag canary
+
+      - name: Smoke check canary URL
+        env:
+          SMOKE_HEADERS_JSON: ${{ secrets.SMOKE_HEADERS_JSON }}
+        run: |
+          CANARY_URL="$(gcloud run services describe my-service --region us-central1 --format='value(status.traffic[tag=canary].url)')"
+          pnpm exec raw-stack smoke --url "$CANARY_URL" --sha "${{ github.sha }}" --browser
+
+      - name: Promote canary to 100% traffic
+        run: gcloud run services update-traffic my-service --region us-central1 --to-latest
+```
+
+#### Generic container / VPS host (deploy, smoke, restore previous release)
+
+```yaml
+name: deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      APP_URL: https://my-app.example.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Deploy release
+        run: ./scripts/deploy-release.sh "${{ github.sha }}"
+
+      - name: Smoke check
+        env:
+          SMOKE_HEADERS_JSON: ${{ secrets.SMOKE_HEADERS_JSON }}
+        run: pnpm exec raw-stack smoke --url "$APP_URL" --sha "${{ github.sha }}"
+
+      - name: Restore previous release on smoke failure
+        if: failure()
+        run: |
+          ./scripts/restore-previous-release.sh
+          curl -fsS "${APP_URL}/api/health" >/dev/null
+          echo "::error::Smoke check failed for ${{ github.sha }}; restored previous release."
+          exit 1
+```
 
 ## Working on raw-stack
 
