@@ -2,10 +2,13 @@
 // Shared Playwright settings for projects whose e2e tests drive a browser.
 // Spread rawStackPlaywright() into defineConfig in playwright.config.ts; the
 // guard fails if the config changes these settings.
+import { parseSmokeHeaders, validateSmokeUrl } from "../lib/smoke-headers.js";
 
 /** Where browser tests live, and their names: Vitest runs e2e/**\/*.test.ts, Playwright runs *.spec.ts. */
 const TEST_DIR = "e2e";
 const TEST_MATCH = "**/*.spec.ts";
+const SMOKE_TEST_DIR = "smoke";
+const SMOKE_TEST_MATCH = "**/*.smoke.spec.ts";
 
 /**
  * Chromium and WebKit (Safari, and every browser on iOS) run in CI; Chromium
@@ -42,11 +45,42 @@ export function parsePlaywrightShard(raw) {
 }
 
 /**
- * @param {{ ci?: boolean }} [options] defaults to the CI environment variable
+ * @param {import("./playwright.d.ts").RawStackPlaywrightOptions} [options]
  * @returns {import("./playwright.d.ts").RawStackPlaywrightConfig}
  */
-export function rawStackPlaywright({ ci = Boolean(process.env["CI"]) } = {}) {
+export function rawStackPlaywright(options = {}) {
+  const { ci = Boolean(process.env["CI"]), baseURL, webServer, use } = options;
   const shard = parsePlaywrightShard(process.env["PW_SHARD"]);
+  const rawSmokeUrl = process.env["SMOKE_BASE_URL"]?.trim();
+
+  if (rawSmokeUrl) {
+    const smokeBaseUrl = validateSmokeUrl(rawSmokeUrl);
+    const smokeHeaders = parseSmokeHeaders(process.env["SMOKE_HEADERS_JSON"]);
+    const hasSmokeHeaders = Object.keys(smokeHeaders).length > 0;
+    const rawExistingHeaders = use?.["extraHTTPHeaders"];
+    const existingHeaders =
+      typeof rawExistingHeaders === "object" && rawExistingHeaders !== null && !Array.isArray(rawExistingHeaders)
+        ? /** @type {Record<string, string>} */ (rawExistingHeaders)
+        : undefined;
+
+    return {
+      testDir: SMOKE_TEST_DIR,
+      testMatch: SMOKE_TEST_MATCH,
+      fullyParallel: true,
+      retries: 0,
+      forbidOnly: ci,
+      webServer: undefined,
+      use: {
+        ...(use ?? {}),
+        trace: "retain-on-failure",
+        baseURL: smokeBaseUrl,
+        ...(hasSmokeHeaders ? { extraHTTPHeaders: { ...(existingHeaders ?? {}), ...smokeHeaders } } : {}),
+      },
+      projects: (ci ? BROWSERS : BROWSERS.slice(0, 1)).map((name) => ({ name, use: { browserName: name } })),
+      ...(shard ? { shard } : {}),
+    };
+  }
+
   return {
     testDir: TEST_DIR,
     testMatch: TEST_MATCH,
@@ -56,7 +90,12 @@ export function rawStackPlaywright({ ci = Boolean(process.env["CI"]) } = {}) {
     retries: 0,
     forbidOnly: ci,
     // A trace only for failed tests: passing tests pay nothing to record it.
-    use: { trace: "retain-on-failure" },
+    use: {
+      ...(use ?? {}),
+      ...(baseURL !== undefined ? { baseURL } : {}),
+      trace: "retain-on-failure",
+    },
+    ...(webServer !== undefined ? { webServer } : {}),
     projects: (ci ? BROWSERS : BROWSERS.slice(0, 1)).map((name) => ({ name, use: { browserName: name } })),
     ...(shard ? { shard } : {}),
   };

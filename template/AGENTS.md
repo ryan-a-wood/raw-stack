@@ -9,6 +9,7 @@ A TypeScript project on [raw-stack](https://github.com/ryan-a-wood/raw-stack): V
 - `pnpm exec raw-stack verify`: the fast verify tier (`vp check --fix`, related unit tests, dependency-cruiser, module health, guard). The Claude Code Stop hook runs this automatically; run it directly from other harnesses.
 - `pnpm verify`: the full verify tier (`raw-stack verify --full`), e2e and browser tests included. Run it before opening a PR. Use `pnpm exec raw-stack verify --checks` or `--browser` to run the non-browser checks or Playwright browser tests on their own.
 - `pnpm exec raw-stack health`: per-unit production file count, LOC, `index.ts(x)` / `client.ts(x)` export usage, and top-level sibling fan-out (`--strict` exits 1 on violations; `--json` prints JSON). `raw-stack verify` enforces these checks automatically.
+- `pnpm exec raw-stack smoke --url <base-url> [--sha <git-sha>] [--health-path /api/health] [--health-timeout-ms 30000] [--browser]`: post-deploy smoke verification against a live URL (polls health/SHA propagation, then runs `smoke/**/*.smoke.test.ts` and, with `--browser`, `smoke/**/*.smoke.spec.ts`). Excluded from `raw-stack verify` and `vp test` unless `SMOKE_BASE_URL` is set.
 - `node src/main.ts`: run the app. Node runs the TypeScript directly.
 
 ## Code layout: deep modules
@@ -46,17 +47,20 @@ When the app gets a web UI (a site or PWA), its e2e tests drive a browser with [
    import { rawStackPlaywright } from "raw-stack/playwright";
 
    export default defineConfig({
-     ...rawStackPlaywright(),
-     webServer: {
-       command: "pnpm start",
-       url: "http://localhost:5173",
-       reuseExistingServer: !process.env.CI,
-     },
-     use: { ...rawStackPlaywright().use, baseURL: "http://localhost:5173" },
+     ...rawStackPlaywright({
+       baseURL: "http://localhost:5173",
+       webServer: {
+         command: "pnpm start",
+         url: "http://localhost:5173",
+         reuseExistingServer: !process.env.CI,
+       },
+     }),
    });
    ```
 
-3. Name browser tests `e2e/<feature>.spec.ts`. Vitest runs `e2e/**/*.test.ts` and Playwright runs `*.spec.ts`, so they don't overlap. `pnpm verify` and CI run both. CI runs them inside Playwright's Docker image, which matches your Playwright version and has the browsers preinstalled. A project with one developer can run them on only one kind of run by uncommenting one line in `.github/workflows/verify.yml`: `RAW_STACK_PR_BROWSER_TESTS: "off"` leaves them to the push to main, and `RAW_STACK_MAIN_BROWSER_TESTS: "off"` leaves them to PRs.
+   Passing `baseURL` and `webServer` as options to `rawStackPlaywright()` lets `raw-stack smoke --browser` (via `SMOKE_BASE_URL` and `SMOKE_HEADERS_JSON`) automatically override `baseURL`, inject `extraHTTPHeaders`, switch `testDir`/`testMatch` to `smoke/**/*.smoke.spec.ts`, and disable `webServer`. If you also extend `use` directly in `defineConfig`, keep `use: { ...rawStackPlaywright().use, ... }` and avoid defining `webServer` after `...rawStackPlaywright()` so smoke runs don't boot a local server.
+
+3. Name browser tests `e2e/<feature>.spec.ts` (and post-deploy browser smoke tests `smoke/<feature>.smoke.spec.ts`). Vitest runs `e2e/**/*.test.ts` and Playwright runs `*.spec.ts`, so they don't overlap. `pnpm verify` and CI run both `e2e` and Playwright against the local app (offline, never `smoke/`). CI runs them inside Playwright's Docker image, which matches your Playwright version and has the browsers preinstalled. A project with one developer can run them on only one kind of run by uncommenting one line in `.github/workflows/verify.yml`: `RAW_STACK_PR_BROWSER_TESTS: "off"` leaves them to the push to main, and `RAW_STACK_MAIN_BROWSER_TESTS: "off"` leaves them to PRs.
 
 `rawStackPlaywright()` sets what keeps the suite fast and honest, and the guard fails if `playwright.config.ts` changes it: tests run in parallel, even within a file (`fullyParallel`); only Chromium runs locally, and Chromium and WebKit run in CI (never Firefox); a trace is kept only for a failed test; no retries; `.only` fails in CI; and `PW_SHARD` (`"<current>/<total>"`) enables native sharding in CI (throws on malformed values). `projects` and `use` can be extended, for example with a login setup project. For larger suites, `.github/workflows/verify.yml` includes a commented-out example showing how to split CI into `raw-stack verify --checks` and sharded `raw-stack verify --browser` jobs.
 

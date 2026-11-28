@@ -23,6 +23,11 @@ const TEST_PROJECTS = [
   { extends: true, test: { name: "e2e", include: ["e2e/**/*.test.ts"], testTimeout: 30_000 } },
 ];
 
+const SMOKE_PROJECT = {
+  extends: true,
+  test: { name: "smoke", include: ["smoke/**/*.smoke.test.ts"], testTimeout: 30_000 },
+};
+
 /** Every rule is an error: there are no warnings to ignore. */
 const rules = {
   // No escape hatches from the type system.
@@ -64,6 +69,7 @@ const rules = {
  * @returns {import("./vite.d.ts").RawStackConfig}
  */
 export function rawStack() {
+  const projects = process.env["SMOKE_BASE_URL"]?.trim() ? [...TEST_PROJECTS, SMOKE_PROJECT] : TEST_PROJECTS;
   return {
     lint: {
       plugins: ["typescript", "unicorn", "oxc", "import"],
@@ -75,7 +81,7 @@ export function rawStack() {
     },
     fmt: {},
     test: {
-      projects: TEST_PROJECTS,
+      projects,
       passWithNoTests: true,
     },
     staged: {

@@ -8,17 +8,31 @@ import { describe, test } from "node:test";
 import { parsePlaywrightShard, rawStackPlaywright } from "../config/playwright.js";
 import { playwrightConfigProblems } from "../lib/browser-tests.js";
 
-/** @param {string | undefined} value @param {() => void} fn */
-function withPwShard(value, fn) {
-  const prev = process.env["PW_SHARD"];
-  if (value === undefined) delete process.env["PW_SHARD"];
-  else process.env["PW_SHARD"] = value;
+/**
+ * @param {Record<string, string | undefined>} vars
+ * @param {() => void} fn
+ */
+function withEnv(vars, fn) {
+  /** @type {Record<string, string | undefined>} */
+  const prev = {};
+  for (const [key, value] of Object.entries(vars)) {
+    prev[key] = process.env[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
   try {
     fn();
   } finally {
-    if (prev === undefined) delete process.env["PW_SHARD"];
-    else process.env["PW_SHARD"] = prev;
+    for (const [key, value] of Object.entries(prev)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
+}
+
+/** @param {string | undefined} value @param {() => void} fn */
+function withPwShard(value, fn) {
+  withEnv({ PW_SHARD: value }, fn);
 }
 
 describe("rawStackPlaywright PW_SHARD handling", () => {
@@ -101,6 +115,136 @@ export default defineConfig({
       assert.deepEqual(playwrightConfigProblems(root), []);
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("rawStackPlaywright SMOKE_BASE_URL and SMOKE_HEADERS_JSON handling", () => {
+  test("preserves e2e defaults and optional baseURL / webServer when SMOKE_BASE_URL is unset", () => {
+    withEnv({ SMOKE_BASE_URL: undefined, SMOKE_HEADERS_JSON: undefined, PW_SHARD: undefined }, () => {
+      const defaults = rawStackPlaywright({ ci: false });
+      assert.equal(defaults.testDir, "e2e");
+      assert.equal(defaults.testMatch, "**/*.spec.ts");
+      assert.equal("webServer" in defaults, false);
+      assert.deepEqual(defaults.use, { trace: "retain-on-failure" });
+
+      const withOpts = rawStackPlaywright({
+        ci: false,
+        baseURL: "http://localhost:5173",
+        webServer: {
+          command: "pnpm start",
+          url: "http://localhost:5173",
+          reuseExistingServer: true,
+        },
+        use: { viewport: { width: 1280, height: 720 } },
+      });
+      assert.equal(withOpts.testDir, "e2e");
+      assert.equal(withOpts.testMatch, "**/*.spec.ts");
+      assert.deepEqual(withOpts.webServer, {
+        command: "pnpm start",
+        url: "http://localhost:5173",
+        reuseExistingServer: true,
+      });
+      assert.deepEqual(withOpts.use, {
+        viewport: { width: 1280, height: 720 },
+        baseURL: "http://localhost:5173",
+        trace: "retain-on-failure",
+      });
+    });
+
+    const root = mkdtempSync(join(tmpdir(), "raw-stack-pw-opts-"));
+    try {
+      writeFileSync(
+        join(root, "playwright.config.ts"),
+        `import { defineConfig } from "@playwright/test";
+import { rawStackPlaywright } from "raw-stack/playwright";
+
+export default defineConfig({
+  ...rawStackPlaywright({
+    baseURL: "http://localhost:5173",
+    webServer: {
+      command: "pnpm start",
+      url: "http://localhost:5173",
+      reuseExistingServer: !process.env.CI,
+    },
+  }),
+});
+`,
+      );
+      assert.deepEqual(playwrightConfigProblems(root), []);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("targets smoke/, sets baseURL & extraHTTPHeaders, and disables webServer when SMOKE_BASE_URL is set", () => {
+    const secret = "smoke-pw-secret-424242";
+    withEnv(
+      {
+        SMOKE_BASE_URL: "https://staging.example.com/app/",
+        SMOKE_HEADERS_JSON: JSON.stringify({
+          "CF-Access-Client-Id": "id-1",
+          "CF-Access-Client-Secret": secret,
+        }),
+        PW_SHARD: undefined,
+      },
+      () => {
+        const cfg = rawStackPlaywright({
+          ci: false,
+          baseURL: "http://localhost:5173",
+          webServer: {
+            command: "pnpm start",
+            url: "http://localhost:5173",
+            reuseExistingServer: true,
+          },
+          use: {
+            extraHTTPHeaders: { "X-Existing": "keep", "CF-Access-Client-Id": "override-me" },
+          },
+        });
+        assert.equal(cfg.testDir, "smoke");
+        assert.equal(cfg.testMatch, "**/*.smoke.spec.ts");
+        assert.equal("webServer" in cfg, true);
+        assert.equal(cfg.webServer, undefined);
+        assert.equal(cfg.use.baseURL, "https://staging.example.com/app");
+        assert.equal(cfg.use.trace, "retain-on-failure");
+        assert.deepEqual(cfg.use.extraHTTPHeaders, {
+          "X-Existing": "keep",
+          "CF-Access-Client-Id": "id-1",
+          "CF-Access-Client-Secret": secret,
+        });
+      },
+    );
+
+    withEnv({ SMOKE_BASE_URL: "https://public.example.com/", SMOKE_HEADERS_JSON: undefined }, () => {
+      const cfg = rawStackPlaywright({ ci: false });
+      assert.equal(cfg.testDir, "smoke");
+      assert.equal(cfg.testMatch, "**/*.smoke.spec.ts");
+      assert.equal(cfg.webServer, undefined);
+      assert.equal(cfg.use.baseURL, "https://public.example.com");
+      assert.equal("extraHTTPHeaders" in cfg.use, false);
+    });
+  });
+
+  test("throws without leaking secrets on invalid SMOKE_BASE_URL or SMOKE_HEADERS_JSON", () => {
+    const secret = "top-secret-pw-leak-check-999";
+    withEnv({ SMOKE_BASE_URL: "ftp://invalid.example.com", SMOKE_HEADERS_JSON: undefined }, () => {
+      assert.throws(() => rawStackPlaywright(), /Invalid smoke URL/);
+    });
+
+    for (const badJson of [
+      `{broken ${secret}`,
+      `["${secret}"]`,
+      `{"Bad Header": "${secret}"}`,
+      `{"X-Val": "${secret}\\n"}`,
+      `{"X-Num": 42}`,
+    ]) {
+      withEnv({ SMOKE_BASE_URL: "https://example.com", SMOKE_HEADERS_JSON: badJson }, () => {
+        assert.throws(
+          () => rawStackPlaywright(),
+          (err) => err instanceof Error && /Invalid SMOKE_HEADERS_JSON/.test(err.message) && !err.message.includes(secret),
+          `expected secret-free error for ${badJson}`,
+        );
+      });
     }
   });
 });
